@@ -1,7 +1,6 @@
 import * as XLSX from "xlsx";
 import { z } from "zod";
-import { ProductType } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId, ProductType } from "@/lib/supabase";
 
 const ImportRowSchema = z.object({
   title: z.string().min(2, "Titre requis"),
@@ -35,10 +34,16 @@ function slugify(text: string): string {
 }
 
 export async function importProductsFromBuffer(buffer: Buffer): Promise<ImportReport> {
+  const supabase = requireSupabaseAdmin();
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
-    return { totalRows: 0, createdCount: 0, skippedDuplicates: 0, errors: [{ row: 0, reason: "Fichier vide." }] };
+    return {
+      totalRows: 0,
+      createdCount: 0,
+      skippedDuplicates: 0,
+      errors: [{ row: 0, reason: "Fichier vide." }],
+    };
   }
 
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName]);
@@ -49,8 +54,10 @@ export async function importProductsFromBuffer(buffer: Buffer): Promise<ImportRe
     errors: [],
   };
 
+  const now = new Date().toISOString();
+
   for (let i = 0; i < rows.length; i++) {
-    const rowNum = i + 2; // ligne Excel/CSV (en-tête = 1)
+    const rowNum = i + 2;
     const raw = rows[i];
 
     const normalized = {
@@ -80,36 +87,64 @@ export async function importProductsFromBuffer(buffer: Buffer): Promise<ImportRe
     const data = parsed.data;
     const slug = slugify(data.title);
 
-    // Contrôle des doublons
-    const existing = await prisma.product.findUnique({ where: { slug } });
+    const { data: existing } = await supabase
+      .from("products")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
     if (existing) {
       report.skippedDuplicates++;
       continue;
     }
 
-    const category = await prisma.category.findFirst({
-      where: {
-        OR: [{ slug: data.categorySlug }, { nameFr: { equals: data.categorySlug, mode: "insensitive" } }],
-      },
-    });
+    const { data: category } = await supabase
+      .from("categories")
+      .select("id")
+      .or(`slug.eq.${data.categorySlug},name_fr.ilike.${data.categorySlug}`)
+      .limit(1)
+      .maybeSingle();
+
     if (!category) {
       report.errors.push({ row: rowNum, reason: `Catégorie introuvable : ${data.categorySlug}` });
       continue;
     }
 
     const authorSlug = slugify(data.author);
-    const author = await prisma.author.upsert({
-      where: { slug: authorSlug },
-      update: {},
-      create: { slug: authorSlug, name: data.author },
-    });
+    let { data: author } = await supabase
+      .from("authors")
+      .select("id")
+      .eq("slug", authorSlug)
+      .maybeSingle();
+    if (!author) {
+      const id = newId();
+      await supabase.from("authors").insert({
+        id,
+        slug: authorSlug,
+        name: data.author,
+        created_at: now,
+        updated_at: now,
+      });
+      author = { id };
+    }
 
-    const pubSlug = slugify(data.publisher || "Éditions NexusArcanum");
-    const publisher = await prisma.publisher.upsert({
-      where: { slug: pubSlug },
-      update: {},
-      create: { slug: pubSlug, name: data.publisher || "Éditions NexusArcanum" },
-    });
+    const pubName = data.publisher || "Éditions NexusArcanum";
+    const pubSlug = slugify(pubName);
+    let { data: publisher } = await supabase
+      .from("publishers")
+      .select("id")
+      .eq("slug", pubSlug)
+      .maybeSingle();
+    if (!publisher) {
+      const id = newId();
+      await supabase.from("publishers").insert({
+        id,
+        slug: pubSlug,
+        name: pubName,
+        created_at: now,
+        updated_at: now,
+      });
+      publisher = { id };
+    }
 
     const formatUpper = data.format.toUpperCase();
     const productType: ProductType =
@@ -119,36 +154,44 @@ export async function importProductsFromBuffer(buffer: Buffer): Promise<ImportRe
         ? "AUDIOBOOK"
         : "EBOOK_PDF";
 
-    await prisma.product.create({
-      data: {
-        slug,
-        titleFr: data.title,
-        titleEn: data.title,
-        subtitleFr: data.subtitle ?? null,
-        subtitleEn: data.subtitle ?? null,
-        shortDescFr: data.description.slice(0, 160),
-        shortDescEn: data.description.slice(0, 160),
-        longDescFr: data.description,
-        longDescEn: data.description,
-        summaryFr: "Sommaire importé via fichier.",
-        summaryEn: "Table of contents imported.",
-        productType,
-        primaryFormat: formatUpper,
-        pageCount: data.pageCount ?? null,
-        language: data.language,
-        coverUrl: data.coverUrl || "/covers/fondements-des-sciences-occultes.svg",
-        priceFcfa: data.priceFcfa,
-        isFree: data.priceFcfa === 0,
-        isDemo: false,
-        categoryId: category.id,
-        authorId: author.id,
-        publisherId: publisher.id,
-      },
+    const { error } = await supabase.from("products").insert({
+      id: newId(),
+      slug,
+      title_fr: data.title,
+      title_en: data.title,
+      subtitle_fr: data.subtitle ?? null,
+      subtitle_en: data.subtitle ?? null,
+      short_desc_fr: data.description.slice(0, 160),
+      short_desc_en: data.description.slice(0, 160),
+      long_desc_fr: data.description,
+      long_desc_en: data.description,
+      summary_fr: "Sommaire importé via fichier.",
+      summary_en: "Table of contents imported.",
+      product_type: productType,
+      primary_format: formatUpper,
+      page_count: data.pageCount ?? null,
+      language: data.language,
+      cover_url: data.coverUrl || "/covers/fondements-des-sciences-occultes.svg",
+      price_fcfa: data.priceFcfa,
+      is_free: data.priceFcfa === 0,
+      is_demo: false,
+      is_archived: false,
+      is_hidden_from_public: false,
+      is_published: true,
+      category_id: category.id,
+      author_id: author.id,
+      publisher_id: publisher.id,
+      created_at: now,
+      updated_at: now,
     });
+
+    if (error) {
+      report.errors.push({ row: rowNum, reason: error.message });
+      continue;
+    }
 
     report.createdCount++;
   }
 
   return report;
 }
-

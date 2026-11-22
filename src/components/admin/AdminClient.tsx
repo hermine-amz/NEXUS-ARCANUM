@@ -257,8 +257,8 @@ export function AdminClient({
 
       {!stats.dbConnected && (
         <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-sm">
-          Base PostgreSQL non connectée. Connectez <code>DATABASE_URL</code> et lancez{" "}
-          <code>npx prisma migrate deploy</code> + <code>npx prisma db seed</code> pour administrer les données en direct.
+          Base Supabase non autorisée ou non connectée. Vérifiez <code>NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
+          <code>SUPABASE_SERVICE_ROLE_KEY</code> et les droits <code>GRANT</code> sur le schéma public.
         </div>
       )}
 

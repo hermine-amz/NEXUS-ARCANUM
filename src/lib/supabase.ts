@@ -1,22 +1,36 @@
-import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+export type ProductType =
+  | "EBOOK_PDF"
+  | "EBOOK_EPUB"
+  | "AUDIOBOOK"
+  | "DIGITAL_MANUAL"
+  | "PRACTICAL_GUIDE"
+  | "DIGITAL_COURSE"
+  | "DIGITAL_MAGAZINE"
+  | "EDUCATIONAL_DOC"
+  | "BOOK_PACK"
+  | "THEMATIC_COLLECTION"
+  | "DIGITAL_LIBRARY"
+  | "DOWNLOADABLE_RESOURCE"
+  | "TRAINING_MATERIAL"
+  | "OTHER_DIGITAL";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "https://muxrjvxgpdnngacwovez.supabase.co";
 
-/**
- * Client Supabase public (anon key) — utilisable côté navigateur et serveur pour les opérations publiques.
- */
-export function getSupabasePublicClient() {
+export function newId(): string {
+  return "c" + crypto.randomBytes(12).toString("hex");
+}
+
+export function getSupabasePublicClient(): SupabaseClient | null {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!anonKey) return null;
   return createClient(supabaseUrl, anonKey);
 }
 
-/**
- * Client Supabase serveur (service_role key) — UNIQUEMENT côté serveur (API Routes / Server Actions).
- * Utilisé pour Supabase Storage (fichiers numériques privés) et les opérations d'administration.
- */
-export function getSupabaseAdminClient() {
+export function getSupabaseAdminClient(): SupabaseClient | null {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) return null;
   return createClient(supabaseUrl, serviceKey, {
@@ -25,4 +39,12 @@ export function getSupabaseAdminClient() {
       persistSession: false,
     },
   });
+}
+
+export function requireSupabaseAdmin(): SupabaseClient {
+  const client = getSupabaseAdminClient();
+  if (!client) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY manquant dans la configuration.");
+  }
+  return client;
 }

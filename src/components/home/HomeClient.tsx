@@ -67,8 +67,7 @@ export function HomeClient({
     <div className="space-y-16 pb-16">
       {!dbConnected && (
         <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs py-2 px-4 text-center">
-          Mode aperçu catalogue : PostgreSQL non détecté sur <code>localhost:5432</code>.
-          Les 16 catégories, 32 produits de démonstration et extraits PDF sont actifs ; connectez PostgreSQL pour activer les comptes, commandes et paiements.
+          Mode aperçu catalogue : vérifiez les droits Supabase (<code>GRANT</code>) pour activer les comptes, commandes et paiements en direct.
         </div>
       )}
 

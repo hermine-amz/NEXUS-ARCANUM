@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 
 const NewsletterSchema = z.object({
   email: z.string().email("Adresse email invalide"),
@@ -15,14 +15,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email invalide." }, { status: 400 });
     }
 
-    await prisma.newsletterSubscriber.upsert({
-      where: { email: parsed.data.email.toLowerCase().trim() },
-      update: { lang: parsed.data.lang },
-      create: {
-        email: parsed.data.email.toLowerCase().trim(),
+    const supabase = requireSupabaseAdmin();
+    const email = parsed.data.email.toLowerCase().trim();
+    const { data: existing } = await supabase
+      .from("newsletter_subscribers")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from("newsletter_subscribers")
+        .update({ lang: parsed.data.lang })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("newsletter_subscribers").insert({
+        id: newId(),
+        email,
         lang: parsed.data.lang,
-      },
-    });
+        created_at: new Date().toISOString(),
+      });
+    }
 
     return NextResponse.json({ ok: true, message: "Inscription confirmée !" });
   } catch {
@@ -32,4 +45,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

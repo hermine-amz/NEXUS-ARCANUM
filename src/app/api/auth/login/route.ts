@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin } from "@/lib/supabase";
 import { verifyPassword } from "@/lib/security/crypto";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/lib/security/auth";
 import { checkRateLimit, getClientIp } from "@/lib/security/rate-limit";
@@ -27,26 +27,44 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Identifiants invalides." }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: parsed.data.email.toLowerCase().trim() },
-      include: { userRoles: { include: { role: true } } },
-    });
+    const supabase = requireSupabaseAdmin();
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", parsed.data.email.toLowerCase().trim())
+      .maybeSingle();
 
-    if (!user || !user.isActive) {
+    if (error || !user || !user.is_active) {
       return NextResponse.json({ error: "Email ou mot de passe incorrect." }, { status: 401 });
     }
 
-    const valid = await verifyPassword(parsed.data.password, user.passwordHash);
+    const valid = await verifyPassword(parsed.data.password, user.password_hash);
     if (!valid) {
       return NextResponse.json({ error: "Email ou mot de passe incorrect." }, { status: 401 });
     }
 
-    const roles = user.userRoles.map((ur) => ur.role.name);
+    const { data: userRoles } = await supabase
+      .from("user_roles")
+      .select("role_id")
+      .eq("user_id", user.id);
+
+    let roles: string[] = [];
+    if (userRoles && userRoles.length > 0) {
+      const { data: roleRows } = await supabase
+        .from("roles")
+        .select("name")
+        .in(
+          "id",
+          userRoles.map((r) => r.role_id)
+        );
+      roles = (roleRows || []).map((r) => r.name);
+    }
+
     const token = await createSessionToken({
       userId: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: user.first_name,
+      lastName: user.last_name,
       roles,
     });
 
@@ -54,16 +72,19 @@ export async function POST(req: Request) {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName: user.first_name,
+        lastName: user.last_name,
         roles,
       },
     });
 
+    const isHttps =
+      req.url.startsWith("https://") || req.headers.get("x-forwarded-proto") === "https";
+
     res.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
     });
@@ -72,11 +93,10 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json(
       {
-        error: "Erreur de connexion au serveur.",
+        error: "Erreur de connexion au serveur Supabase.",
         details: err instanceof Error ? err.message : undefined,
       },
       { status: 500 }
     );
   }
 }
-

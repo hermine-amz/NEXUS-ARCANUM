@@ -1,4 +1,4 @@
-import { ProductType } from "@prisma/client";
+import type { ProductType } from "@/lib/supabase";
 
 export interface DemoCategoryDef {
   slug: string;

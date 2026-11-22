@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { hashPassword } from "@/lib/security/crypto";
 import { createSessionToken, SESSION_COOKIE_NAME } from "@/lib/security/auth";
 import { checkRateLimit, getClientIp } from "@/lib/security/rate-limit";
@@ -39,8 +39,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const supabase = requireSupabaseAdmin();
     const email = parsed.data.email.toLowerCase().trim();
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
     if (existing) {
       return NextResponse.json(
         { error: "Un compte existe déjà avec cette adresse email." },
@@ -48,49 +54,73 @@ export async function POST(req: Request) {
       );
     }
 
+    const now = new Date().toISOString();
+    let { data: customerRole } = await supabase
+      .from("roles")
+      .select("id")
+      .eq("name", "CUSTOMER")
+      .maybeSingle();
+
+    if (!customerRole) {
+      const id = newId();
+      await supabase
+        .from("roles")
+        .insert({ id, name: "CUSTOMER", description: "Client lecteur", created_at: now });
+      customerRole = { id };
+    }
+
+    const userId = newId();
     const passwordHash = await hashPassword(parsed.data.password);
-    const customerRole = await prisma.role.upsert({
-      where: { name: "CUSTOMER" },
-      update: {},
-      create: { name: "CUSTOMER", description: "Client lecteur" },
+    const { error: insertErr } = await supabase.from("users").insert({
+      id: userId,
+      email,
+      password_hash: passwordHash,
+      first_name: parsed.data.firstName.trim(),
+      last_name: parsed.data.lastName.trim(),
+      phone: parsed.data.phone?.trim() ?? null,
+      country: parsed.data.country,
+      preferred_lang: "fr",
+      is_active: true,
+      created_at: now,
+      updated_at: now,
     });
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        firstName: parsed.data.firstName.trim(),
-        lastName: parsed.data.lastName.trim(),
-        phone: parsed.data.phone?.trim(),
-        country: parsed.data.country,
-        userRoles: {
-          create: { roleId: customerRole.id },
-        },
-      },
-    });
+    if (insertErr) {
+      return NextResponse.json(
+        { error: "Impossible de créer le compte.", details: insertErr.message },
+        { status: 500 }
+      );
+    }
+
+    await supabase
+      .from("user_roles")
+      .insert({ user_id: userId, role_id: customerRole.id });
 
     const token = await createSessionToken({
-      userId: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      userId,
+      email,
+      firstName: parsed.data.firstName.trim(),
+      lastName: parsed.data.lastName.trim(),
       roles: ["CUSTOMER"],
     });
 
     const res = NextResponse.json({
       user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        id: userId,
+        email,
+        firstName: parsed.data.firstName.trim(),
+        lastName: parsed.data.lastName.trim(),
         roles: ["CUSTOMER"],
       },
     });
 
+    const isHttps =
+      req.url.startsWith("https://") || req.headers.get("x-forwarded-proto") === "https";
+
     res.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttps,
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
     });
@@ -99,11 +129,10 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json(
       {
-        error: "Impossible de créer le compte (vérifiez la connexion PostgreSQL).",
+        error: "Impossible de créer le compte (vérifiez Supabase).",
         details: err instanceof Error ? err.message : undefined,
       },
       { status: 500 }
     );
   }
 }
-

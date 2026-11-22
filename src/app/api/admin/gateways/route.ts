@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { getCurrentSession, isAdminSession } from "@/lib/security/auth";
 import { encryptSecrets, decryptSecrets } from "@/lib/security/crypto";
 import { getConnector, getRoutingMode } from "@/lib/services/payment/gateway-manager";
@@ -28,20 +28,37 @@ export async function GET() {
   }
 
   try {
-    const [gateways, routingMode] = await Promise.all([
-      prisma.paymentGateway.findMany({ orderBy: [{ isDefault: "desc" }, { priority: "asc" }] }),
+    const supabase = requireSupabaseAdmin();
+    const [{ data: gateways }, routingMode] = await Promise.all([
+      supabase
+        .from("payment_gateways")
+        .select("*")
+        .order("is_default", { ascending: false })
+        .order("priority", { ascending: true }),
       getRoutingMode(),
     ]);
 
-    // Ne jamais renvoyer les secrets en clair au client ; indiquer seulement s'ils sont renseignés
-    const sanitized = gateways.map((g) => {
-      const dec = decryptSecrets(g.encryptedSecrets);
+    const sanitized = (gateways || []).map((g) => {
+      const dec = decryptSecrets(g.encrypted_secrets);
       return {
-        ...g,
-        encryptedSecrets: undefined,
+        id: g.id,
+        code: g.code,
+        name: g.name,
+        description: g.description,
+        isActive: g.is_active,
+        isDefault: g.is_default,
+        environment: g.environment,
+        apiBaseUrl: g.api_base_url,
+        webhookUrl: g.webhook_url,
+        supportedCurrencies: g.supported_currencies || ["XOF"],
+        supportedCountries: g.supported_countries || ["BJ"],
+        supportedOperators: g.supported_operators || ["MTN"],
+        feePercent: g.fee_percent ?? 0,
+        feeFixedFcfa: g.fee_fixed_fcfa ?? 0,
         hasApiKey: Boolean(dec.apiKey),
         hasWebhookSecret: Boolean(dec.webhookSecret),
         gatewayProductDocumentId: dec.gatewayProductDocumentId || "",
+        lastTestStatus: g.last_test_status,
       };
     });
 
@@ -67,22 +84,23 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Paramètres invalides." }, { status: 400 });
     }
 
+    const supabase = requireSupabaseAdmin();
     const data = parsed.data;
+    const now = new Date().toISOString();
 
     if (data.action === "SET_ROUTING_MODE" && data.routingMode) {
-      await prisma.siteSetting.upsert({
-        where: { key: "payment_routing_mode" },
-        update: { value: data.routingMode },
-        create: { key: "payment_routing_mode", value: data.routingMode },
-      });
-      await prisma.auditLog.create({
-        data: {
-          userId: session!.userId,
-          action: "PAYMENT_ROUTING_MODE_CHANGED",
-          entityType: "SiteSetting",
-          entityId: "payment_routing_mode",
-          details: { routingMode: data.routingMode },
-        },
+      await supabase.from("site_settings").upsert(
+        { key: "payment_routing_mode", value: data.routingMode, updated_at: now },
+        { onConflict: "key" }
+      );
+      await supabase.from("audit_logs").insert({
+        id: newId(),
+        user_id: session!.userId,
+        action: "PAYMENT_ROUTING_MODE_CHANGED",
+        entity_type: "SiteSetting",
+        entity_id: "payment_routing_mode",
+        details: { routingMode: data.routingMode },
+        created_at: now,
       });
       return NextResponse.json({ ok: true, routingMode: data.routingMode });
     }
@@ -91,27 +109,30 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "gatewayId requis." }, { status: 400 });
     }
 
-    const gw = await prisma.paymentGateway.findUnique({ where: { id: data.gatewayId } });
+    const { data: gw } = await supabase
+      .from("payment_gateways")
+      .select("*")
+      .eq("id", data.gatewayId)
+      .maybeSingle();
+
     if (!gw) {
       return NextResponse.json({ error: "Agrégateur introuvable." }, { status: 404 });
     }
 
     if (data.action === "SET_DEFAULT") {
-      await prisma.$transaction([
-        prisma.paymentGateway.updateMany({ data: { isDefault: false } }),
-        prisma.paymentGateway.update({
-          where: { id: gw.id },
-          data: { isDefault: true, isActive: true },
-        }),
-      ]);
-      await prisma.auditLog.create({
-        data: {
-          userId: session!.userId,
-          action: "GATEWAY_SET_DEFAULT",
-          entityType: "PaymentGateway",
-          entityId: gw.id,
-          details: { code: gw.code },
-        },
+      await supabase.from("payment_gateways").update({ is_default: false, updated_at: now }).neq("id", gw.id);
+      await supabase
+        .from("payment_gateways")
+        .update({ is_default: true, is_active: true, updated_at: now })
+        .eq("id", gw.id);
+      await supabase.from("audit_logs").insert({
+        id: newId(),
+        user_id: session!.userId,
+        action: "GATEWAY_SET_DEFAULT",
+        entity_type: "PaymentGateway",
+        entity_id: gw.id,
+        details: { code: gw.code },
+        created_at: now,
       });
       return NextResponse.json({ ok: true });
     }
@@ -122,33 +143,33 @@ export async function PATCH(req: Request) {
         id: gw.id,
         code: gw.code,
         name: gw.name,
-        isActive: gw.isActive,
-        isDefault: gw.isDefault,
+        isActive: gw.is_active,
+        isDefault: gw.is_default,
         environment: gw.environment,
-        apiBaseUrl: gw.apiBaseUrl || "",
-        webhookUrl: gw.webhookUrl || "",
-        supportedCurrencies: gw.supportedCurrencies,
-        supportedCountries: gw.supportedCountries,
-        supportedOperators: gw.supportedOperators,
-        feePercent: gw.feePercent,
-        feeFixedFcfa: gw.feeFixedFcfa,
-        priority: gw.priority,
-        secrets: decryptSecrets(gw.encryptedSecrets),
+        apiBaseUrl: gw.api_base_url || "",
+        webhookUrl: gw.webhook_url || "",
+        supportedCurrencies: gw.supported_currencies || ["XOF"],
+        supportedCountries: gw.supported_countries || ["BJ"],
+        supportedOperators: gw.supported_operators || ["MTN"],
+        feePercent: gw.fee_percent ?? 0,
+        feeFixedFcfa: gw.fee_fixed_fcfa ?? 0,
+        priority: gw.priority ?? 10,
+        secrets: decryptSecrets(gw.encrypted_secrets),
       });
 
-      await prisma.paymentGateway.update({
-        where: { id: gw.id },
-        data: {
-          lastTestStatus: result.ok ? "OK" : "ERROR",
-          lastTestedAt: new Date(),
-        },
-      });
+      await supabase
+        .from("payment_gateways")
+        .update({
+          last_test_status: result.ok ? "OK" : "ERROR",
+          last_tested_at: now,
+          updated_at: now,
+        })
+        .eq("id", gw.id);
 
       return NextResponse.json(result);
     }
 
-    // UPDATE_CONFIG
-    const existingSecrets = decryptSecrets(gw.encryptedSecrets);
+    const existingSecrets = decryptSecrets(gw.encrypted_secrets);
     const mergedSecrets = {
       ...existingSecrets,
       ...(data.secrets
@@ -158,30 +179,34 @@ export async function PATCH(req: Request) {
         : {}),
     };
 
-    const updated = await prisma.paymentGateway.update({
-      where: { id: gw.id },
-      data: {
-        isActive: data.isActive ?? gw.isActive,
-        environment: data.environment ?? gw.environment,
-        apiBaseUrl: data.apiBaseUrl ?? gw.apiBaseUrl,
-        webhookUrl: data.webhookUrl ?? gw.webhookUrl,
-        feePercent: data.feePercent ?? gw.feePercent,
-        feeFixedFcfa: data.feeFixedFcfa ?? gw.feeFixedFcfa,
-        supportedCurrencies: data.supportedCurrencies ?? gw.supportedCurrencies,
-        supportedCountries: data.supportedCountries ?? gw.supportedCountries,
-        supportedOperators: data.supportedOperators ?? gw.supportedOperators,
-        encryptedSecrets: encryptSecrets(mergedSecrets),
-      },
-    });
+    const nextActive = data.isActive ?? gw.is_active;
+    const nextEnv = data.environment ?? gw.environment;
 
-    await prisma.auditLog.create({
-      data: {
-        userId: session!.userId,
-        action: "GATEWAY_CONFIG_UPDATED",
-        entityType: "PaymentGateway",
-        entityId: gw.id,
-        details: { code: gw.code, isActive: updated.isActive, environment: updated.environment },
-      },
+    await supabase
+      .from("payment_gateways")
+      .update({
+        is_active: nextActive,
+        environment: nextEnv,
+        api_base_url: data.apiBaseUrl ?? gw.api_base_url,
+        webhook_url: data.webhookUrl ?? gw.webhook_url,
+        fee_percent: data.feePercent ?? gw.fee_percent,
+        fee_fixed_fcfa: data.feeFixedFcfa ?? gw.fee_fixed_fcfa,
+        supported_currencies: data.supportedCurrencies ?? gw.supported_currencies,
+        supported_countries: data.supportedCountries ?? gw.supported_countries,
+        supported_operators: data.supportedOperators ?? gw.supported_operators,
+        encrypted_secrets: encryptSecrets(mergedSecrets),
+        updated_at: now,
+      })
+      .eq("id", gw.id);
+
+    await supabase.from("audit_logs").insert({
+      id: newId(),
+      user_id: session!.userId,
+      action: "GATEWAY_CONFIG_UPDATED",
+      entity_type: "PaymentGateway",
+      entity_id: gw.id,
+      details: { code: gw.code, isActive: nextActive, environment: nextEnv },
+      created_at: now,
     });
 
     return NextResponse.json({ ok: true });
@@ -192,4 +217,3 @@ export async function PATCH(req: Request) {
     );
   }
 }
-

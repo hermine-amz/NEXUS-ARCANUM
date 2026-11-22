@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { getCurrentSession, isAdminSession } from "@/lib/security/auth";
 
 const AdminProductPatchSchema = z.object({
@@ -29,11 +29,28 @@ export async function GET() {
   }
 
   try {
-    const products = await prisma.product.findMany({
-      include: { category: true, author: true },
-      orderBy: { createdAt: "desc" },
-    });
-    return NextResponse.json({ products });
+    const supabase = requireSupabaseAdmin();
+    const [{ data: prods }, { data: cats }] = await Promise.all([
+      supabase.from("products").select("*").order("created_at", { ascending: false }),
+      supabase.from("categories").select("id, name_fr"),
+    ]);
+
+    const catById = new Map((cats || []).map((c) => [c.id, c.name_fr]));
+
+    const formatted = (prods || []).map((p) => ({
+      id: p.id,
+      slug: p.slug,
+      titleFr: p.title_fr,
+      priceFcfa: p.price_fcfa,
+      isDemo: p.is_demo,
+      isArchived: p.is_archived,
+      isHiddenFromPublic: p.is_hidden_from_public,
+      salesCount: p.sales_count,
+      viewCount: p.view_count,
+      category: { nameFr: catById.get(p.category_id) || "" },
+    }));
+
+    return NextResponse.json({ products: formatted });
   } catch (err) {
     return NextResponse.json(
       { error: "Erreur lecture catalogue admin.", details: String(err) },
@@ -55,66 +72,75 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Paramètres invalides." }, { status: 400 });
     }
 
+    const supabase = requireSupabaseAdmin();
     const d = parsed.data;
-    const product = await prisma.product.findUnique({ where: { id: d.productId } });
+    const { data: product } = await supabase
+      .from("products")
+      .select("*")
+      .eq("id", d.productId)
+      .maybeSingle();
+
     if (!product) {
       return NextResponse.json({ error: "Produit introuvable." }, { status: 404 });
     }
 
+    const now = new Date().toISOString();
+
     if (d.action === "ARCHIVE") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { isArchived: true, isPublished: false },
-      });
+      await supabase
+        .from("products")
+        .update({ is_archived: true, is_published: false, updated_at: now })
+        .eq("id", product.id);
     } else if (d.action === "UNARCHIVE") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { isArchived: false, isPublished: true },
-      });
+      await supabase
+        .from("products")
+        .update({ is_archived: false, is_published: true, updated_at: now })
+        .eq("id", product.id);
     } else if (d.action === "TOGGLE_HIDE") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { isHiddenFromPublic: !product.isHiddenFromPublic },
-      });
+      await supabase
+        .from("products")
+        .update({ is_hidden_from_public: !product.is_hidden_from_public, updated_at: now })
+        .eq("id", product.id);
     } else if (d.action === "CONVERT_TO_COMMERCIAL") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { isDemo: false, demoNotice: null },
-      });
+      await supabase
+        .from("products")
+        .update({ is_demo: false, demo_notice: null, updated_at: now })
+        .eq("id", product.id);
     } else if (d.action === "DUPLICATE") {
       const suffix = crypto.randomBytes(2).toString("hex");
-      await prisma.product.create({
-        data: {
-          ...product,
-          id: undefined,
-          slug: `${product.slug}-copie-${suffix}`,
-          titleFr: `${product.titleFr} (Copie)`,
-          titleEn: `${product.titleEn} (Copy)`,
-          createdAt: undefined,
-          updatedAt: undefined,
-        },
-      });
+      const clone = {
+        ...product,
+        id: newId(),
+        slug: `${product.slug}-copie-${suffix}`,
+        title_fr: `${product.title_fr} (Copie)`,
+        title_en: `${product.title_en} (Copy)`,
+        created_at: now,
+        updated_at: now,
+      };
+      await supabase.from("products").insert(clone);
     } else if (d.action === "UPDATE") {
-      await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          titleFr: d.titleFr ?? product.titleFr,
-          shortDescFr: d.shortDescFr ?? product.shortDescFr,
-          priceFcfa: d.priceFcfa ?? product.priceFcfa,
-          promoPriceFcfa: d.promoPriceFcfa !== undefined ? d.promoPriceFcfa : product.promoPriceFcfa,
-          categoryId: d.categoryId ?? product.categoryId,
-          coverUrl: d.coverUrl ?? product.coverUrl,
-        },
-      });
+      await supabase
+        .from("products")
+        .update({
+          title_fr: d.titleFr ?? product.title_fr,
+          short_desc_fr: d.shortDescFr ?? product.short_desc_fr,
+          price_fcfa: d.priceFcfa ?? product.price_fcfa,
+          promo_price_fcfa:
+            d.promoPriceFcfa !== undefined ? d.promoPriceFcfa : product.promo_price_fcfa,
+          category_id: d.categoryId ?? product.category_id,
+          cover_url: d.coverUrl ?? product.cover_url,
+          updated_at: now,
+        })
+        .eq("id", product.id);
     }
 
-    await prisma.auditLog.create({
-      data: {
-        userId: session!.userId,
-        action: `PRODUCT_${d.action}`,
-        entityType: "Product",
-        entityId: product.id,
-      },
+    await supabase.from("audit_logs").insert({
+      id: newId(),
+      user_id: session!.userId,
+      action: `PRODUCT_${d.action}`,
+      entity_type: "Product",
+      entity_id: product.id,
+      created_at: now,
     });
 
     return NextResponse.json({ ok: true });
@@ -125,4 +151,3 @@ export async function PATCH(req: Request) {
     );
   }
 }
-

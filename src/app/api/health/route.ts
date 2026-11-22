@@ -1,19 +1,27 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 export async function GET() {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return NextResponse.json({ status: "ok", database: "connected" });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        status: "degraded",
-        database: "disconnected",
-        message: error instanceof Error ? error.message : "Database unreachable",
-      },
-      { status: 200 }
-    );
+  const supabase = getSupabaseAdminClient();
+  if (!supabase) {
+    return NextResponse.json({
+      status: "degraded",
+      database: "disconnected",
+      message: "SUPABASE_SERVICE_ROLE_KEY manquant",
+    });
   }
-}
 
+  const { error } = await supabase
+    .from("categories")
+    .select("id", { count: "exact", head: true });
+
+  if (error) {
+    return NextResponse.json({
+      status: "degraded",
+      database: "disconnected",
+      message: error.message,
+    });
+  }
+
+  return NextResponse.json({ status: "ok", database: "supabase-connected" });
+}

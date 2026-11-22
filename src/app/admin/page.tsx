@@ -1,5 +1,5 @@
 import React from "react";
-import { prisma } from "@/lib/prisma";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 import { AdminClient } from "@/components/admin/AdminClient";
 
 export const dynamic = "force-dynamic";
@@ -16,35 +16,59 @@ export default async function AdminPage() {
     pendingPayments: 0,
   };
 
-  try {
-    const [ordersAgg, totalOrders, totalUsers, totalProducts, succeededPayments, failedPayments, pendingPayments] =
-      await Promise.all([
-        prisma.order.aggregate({
-          where: { status: "PAID" },
-          _sum: { totalFcfa: true },
-        }),
-        prisma.order.count(),
-        prisma.user.count(),
-        prisma.product.count({ where: { isArchived: false } }),
-        prisma.payment.count({ where: { status: "SUCCEEDED" } }),
-        prisma.payment.count({ where: { status: "FAILED" } }),
-        prisma.payment.count({ where: { status: "PENDING" } }),
+  const supabase = getSupabaseAdminClient();
+  if (supabase) {
+    try {
+      const [
+        paidOrdersRes,
+        ordersCount,
+        usersCount,
+        productsCount,
+        succeededRes,
+        failedRes,
+        pendingRes,
+      ] = await Promise.all([
+        supabase.from("orders").select("total_fcfa").eq("status", "PAID"),
+        supabase.from("orders").select("id", { count: "exact", head: true }),
+        supabase.from("users").select("id", { count: "exact", head: true }),
+        supabase
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .eq("is_archived", false),
+        supabase
+          .from("payments")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "SUCCEEDED"),
+        supabase
+          .from("payments")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "FAILED"),
+        supabase
+          .from("payments")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "PENDING"),
       ]);
 
-    stats = {
-      dbConnected: true,
-      totalRevenueFcfa: ordersAgg._sum.totalFcfa ?? 0,
-      totalOrders,
-      totalUsers,
-      totalProducts,
-      succeededPayments,
-      failedPayments,
-      pendingPayments,
-    };
-  } catch {
-    // DB non connectée
+      if (!ordersCount.error) {
+        const totalRevenueFcfa = (paidOrdersRes.data || []).reduce(
+          (sum, row) => sum + (row.total_fcfa || 0),
+          0
+        );
+        stats = {
+          dbConnected: true,
+          totalRevenueFcfa,
+          totalOrders: ordersCount.count ?? 0,
+          totalUsers: usersCount.count ?? 0,
+          totalProducts: productsCount.count ?? 0,
+          succeededPayments: succeededRes.count ?? 0,
+          failedPayments: failedRes.count ?? 0,
+          pendingPayments: pendingRes.count ?? 0,
+        };
+      }
+    } catch {
+      // Supabase non joignable
+    }
   }
 
   return <AdminClient stats={stats} />;
 }
-

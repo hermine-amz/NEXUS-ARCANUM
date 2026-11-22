@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { prisma } from "@/lib/prisma";
+import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { decryptSecrets } from "@/lib/security/crypto";
 import {
   GatewayRuntimeConfig,
@@ -27,51 +27,52 @@ const CONNECTOR_REGISTRY: Record<string, IPaymentGateway> = {
 export function getConnector(code: string): IPaymentGateway {
   return (
     CONNECTOR_REGISTRY[code] ??
-    new ConfigurableExternalConnector(
-      code,
-      `Aucun adaptateur implémenté pour ${code}.`
-    )
+    new ConfigurableExternalConnector(code, `Aucun adaptateur implémenté pour ${code}.`)
   );
 }
 
 export async function getRoutingMode(): Promise<RoutingMode> {
-  const setting = await prisma.siteSetting.findUnique({
-    where: { key: "payment_routing_mode" },
-  });
-  if (setting?.value === "MODE_A" || setting?.value === "MODE_B" || setting?.value === "MODE_C") {
-    return setting.value;
+  const supabase = requireSupabaseAdmin();
+  const { data } = await supabase
+    .from("site_settings")
+    .select("value")
+    .eq("key", "payment_routing_mode")
+    .maybeSingle();
+
+  if (data?.value === "MODE_A" || data?.value === "MODE_B" || data?.value === "MODE_C") {
+    return data.value;
   }
   return "MODE_B";
 }
 
 export async function getActiveGateways(): Promise<GatewayRuntimeConfig[]> {
-  const rows = await prisma.paymentGateway.findMany({
-    where: { isActive: true },
-    orderBy: [{ isDefault: "desc" }, { priority: "asc" }],
-  });
+  const supabase = requireSupabaseAdmin();
+  const { data: rows } = await supabase
+    .from("payment_gateways")
+    .select("*")
+    .eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .order("priority", { ascending: true });
 
-  return rows.map((row) => ({
+  return (rows || []).map((row) => ({
     id: row.id,
     code: row.code,
     name: row.name,
-    isActive: row.isActive,
-    isDefault: row.isDefault,
+    isActive: row.is_active,
+    isDefault: row.is_default,
     environment: row.environment,
-    apiBaseUrl: row.apiBaseUrl || "",
-    webhookUrl: row.webhookUrl || "",
-    supportedCurrencies: row.supportedCurrencies,
-    supportedCountries: row.supportedCountries,
-    supportedOperators: row.supportedOperators,
-    feePercent: row.feePercent,
-    feeFixedFcfa: row.feeFixedFcfa,
-    priority: row.priority,
-    secrets: decryptSecrets(row.encryptedSecrets),
+    apiBaseUrl: row.api_base_url || "",
+    webhookUrl: row.webhook_url || "",
+    supportedCurrencies: row.supported_currencies || ["XOF"],
+    supportedCountries: row.supported_countries || ["BJ"],
+    supportedOperators: row.supported_operators || ["MTN"],
+    feePercent: row.fee_percent ?? 0,
+    feeFixedFcfa: row.fee_fixed_fcfa ?? 0,
+    priority: row.priority ?? 10,
+    secrets: decryptSecrets(row.encrypted_secrets),
   }));
 }
 
-/**
- * Sélectionne l'agrégateur selon le mode actif (MODE A, MODE B, MODE C).
- */
 export async function selectGateway(params: {
   requestedGatewayCode?: string;
   country?: string;
@@ -104,7 +105,6 @@ export async function selectGateway(params: {
     );
 
     const pool = candidates.length > 0 ? candidates : active;
-    // Routage intelligent : privilégie les frais les plus bas puis la priorité
     return [...pool].sort((a, b) => {
       if (a.feePercent !== b.feePercent) return a.feePercent - b.feePercent;
       return a.priority - b.priority;
@@ -114,26 +114,30 @@ export async function selectGateway(params: {
   return active.find((g) => g.isDefault) ?? active[0];
 }
 
-/**
- * Initialise un paiement pour une commande réelle (jamais pour un produit de démonstration).
- */
 export async function initiateOrderPayment(params: {
   orderId: string;
   gatewayCode?: string;
   operator?: string;
   baseUrl: string;
 }) {
-  const order = await prisma.order.findUnique({
-    where: { id: params.orderId },
-    include: { items: true, payments: true },
-  });
+  const supabase = requireSupabaseAdmin();
+
+  const { data: order } = await supabase
+    .from("orders")
+    .select("*")
+    .eq("id", params.orderId)
+    .maybeSingle();
 
   if (!order) {
     return { ok: false, error: "Commande introuvable." };
   }
 
-  // Règle absolue : les produits de démonstration ne déclenchent JAMAIS un paiement réel
-  if (order.isDemoOrder || order.items.some((item) => item.isDemo)) {
+  const [{ data: items }, { data: payments }] = await Promise.all([
+    supabase.from("order_items").select("*").eq("order_id", order.id),
+    supabase.from("payments").select("*").eq("order_id", order.id),
+  ]);
+
+  if (order.is_demo_order || (items || []).some((item) => item.is_demo)) {
     return {
       ok: false,
       isDemoBlocked: true,
@@ -142,8 +146,7 @@ export async function initiateOrderPayment(params: {
     };
   }
 
-  // Protection contre les doubles paiements ou relance sur un autre prestataire si déjà en attente
-  const existingPending = order.payments.find(
+  const existingPending = (payments || []).find(
     (p) => p.status === "PENDING" || p.status === "SUCCEEDED"
   );
   if (existingPending) {
@@ -152,14 +155,14 @@ export async function initiateOrderPayment(params: {
       error:
         existingPending.status === "SUCCEEDED"
           ? "Cette commande est déjà réglée."
-          : `Une transaction est déjà en cours (${existingPending.gatewayCode}). Ne jamais relancer sur un autre prestataire tant qu'elle est en attente.`,
+          : `Une transaction est déjà en cours (${existingPending.gateway_code}). Ne jamais relancer sur un autre prestataire tant qu'elle est en attente.`,
       existingPayment: existingPending,
     };
   }
 
   const gatewayConfig = await selectGateway({
     requestedGatewayCode: params.gatewayCode,
-    country: order.customerCountry || "BJ",
+    country: order.customer_country || "BJ",
     currency: order.currency,
     operator: params.operator,
   });
@@ -169,19 +172,19 @@ export async function initiateOrderPayment(params: {
   }
 
   const idempotencyKey = `pay_${order.id}_${crypto.randomUUID()}`;
-  const [firstName, ...restName] = order.customerName.split(" ");
+  const [firstName, ...restName] = String(order.customer_name || "").split(" ");
   const lastName = restName.join(" ") || firstName;
 
   const initInput: PaymentInitInput = {
     orderId: order.id,
     orderReference: order.reference,
-    amountFcfa: order.totalFcfa,
+    amountFcfa: order.total_fcfa,
     currency: order.currency,
-    customerEmail: order.customerEmail,
+    customerEmail: order.customer_email,
     customerFirstName: firstName,
     customerLastName: lastName,
-    customerPhone: order.customerPhone || undefined,
-    customerCountry: order.customerCountry || "BJ",
+    customerPhone: order.customer_phone || undefined,
+    customerCountry: order.customer_country || "BJ",
     preferredOperator: params.operator,
     redirectUrl: `${params.baseUrl}/commande/${order.reference}`,
     webhookUrl: `${params.baseUrl}/api/payments/webhooks/${gatewayConfig.code}`,
@@ -192,32 +195,42 @@ export async function initiateOrderPayment(params: {
   const result = await connector.initiatePayment(initInput, gatewayConfig);
 
   const feeFcfa = Math.round(
-    (order.totalFcfa * gatewayConfig.feePercent) / 100 + gatewayConfig.feeFixedFcfa
+    (order.total_fcfa * gatewayConfig.feePercent) / 100 + gatewayConfig.feeFixedFcfa
   );
 
-  const payment = await prisma.payment.create({
-    data: {
-      orderId: order.id,
-      gatewayId: gatewayConfig.id,
-      gatewayCode: gatewayConfig.code,
-      amountFcfa: order.totalFcfa,
+  const paymentId = newId();
+  const now = new Date().toISOString();
+
+  const { data: payment } = await supabase
+    .from("payments")
+    .insert({
+      id: paymentId,
+      order_id: order.id,
+      gateway_id: gatewayConfig.id,
+      gateway_code: gatewayConfig.code,
+      amount_fcfa: order.total_fcfa,
       currency: order.currency,
-      feeFcfa,
+      fee_fcfa: feeFcfa,
       status: result.success ? "PENDING" : "FAILED",
-      externalReference: result.externalReference,
-      redirectUrl: result.redirectUrl,
-      idempotencyKey,
-      transactions: {
-        create: {
-          gatewayId: gatewayConfig.id,
-          eventType: "INIT",
-          status: result.success ? "PENDING" : "FAILED",
-          externalTxId: result.externalReference,
-          rawPayload: (result.rawPayload ?? {}) as object,
-          errorMessage: result.errorMessage,
-        },
-      },
-    },
+      external_reference: result.externalReference ?? null,
+      redirect_url: result.redirectUrl ?? null,
+      idempotency_key: idempotencyKey,
+      created_at: now,
+      updated_at: now,
+    })
+    .select("*")
+    .single();
+
+  await supabase.from("payment_transactions").insert({
+    id: newId(),
+    payment_id: paymentId,
+    gateway_id: gatewayConfig.id,
+    event_type: "INIT",
+    status: result.success ? "PENDING" : "FAILED",
+    external_tx_id: result.externalReference ?? null,
+    raw_payload: (result.rawPayload ?? {}) as object,
+    error_message: result.errorMessage ?? null,
+    created_at: now,
   });
 
   if (!result.success) {
@@ -228,10 +241,10 @@ export async function initiateOrderPayment(params: {
     };
   }
 
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { status: "AWAITING_PAYMENT" },
-  });
+  await supabase
+    .from("orders")
+    .update({ status: "AWAITING_PAYMENT", updated_at: now })
+    .eq("id", order.id);
 
   return {
     ok: true,
@@ -239,4 +252,3 @@ export async function initiateOrderPayment(params: {
     redirectUrl: result.redirectUrl,
   };
 }
-
