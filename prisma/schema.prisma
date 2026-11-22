@@ -1,0 +1,584 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. UTILISATEURS, RÔLES & PERMISSIONS (RBAC)
+// ==========================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  phone         String?
+  country       String?   @default("BJ")
+  preferredLang String    @default("fr") @map("preferred_lang")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  userRoles     UserRole[]
+  carts         Cart[]
+  orders        Order[]
+  entitlements  DigitalEntitlement[]
+  downloads     Download[]
+  reviews       Review[]
+  favorites     Favorite[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // SUPER_ADMIN, ADMIN, EDITOR, CUSTOMER
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique // e.g. "products.write", "payments.manage"
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ==========================================
+// 2. CATALOGUE NUMÉRIQUE
+// ==========================================
+
+model Category {
+  id          String     @id @default(cuid())
+  slug        String     @unique
+  nameFr      String     @map("name_fr")
+  nameEn      String     @map("name_en")
+  descriptionFr String?  @map("description_fr")
+  descriptionEn String?  @map("description_en")
+  icon        String?
+  sortOrder   Int        @default(0) @map("sort_order")
+  isActive    Boolean    @default(true) @map("is_active")
+  parentId    String?    @map("parent_id")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryHierarchy")
+  products Product[]
+
+  @@index([parentId])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model Author {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  bioFr     String?   @map("bio_fr")
+  bioEn     String?   @map("bio_en")
+  country   String?
+  avatarUrl String?   @map("avatar_url")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("authors")
+}
+
+model Publisher {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  website   String?
+  country   String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@map("publishers")
+}
+
+enum ProductType {
+  EBOOK_PDF
+  EBOOK_EPUB
+  AUDIOBOOK
+  DIGITAL_MANUAL
+  PRACTICAL_GUIDE
+  DIGITAL_COURSE
+  DIGITAL_MAGAZINE
+  EDUCATIONAL_DOC
+  BOOK_PACK
+  THEMATIC_COLLECTION
+  DIGITAL_LIBRARY
+  DOWNLOADABLE_RESOURCE
+  TRAINING_MATERIAL
+  OTHER_DIGITAL
+}
+
+model Product {
+  id                String      @id @default(cuid())
+  slug              String      @unique
+  titleFr           String      @map("title_fr")
+  titleEn           String      @map("title_en")
+  subtitleFr        String?     @map("subtitle_fr")
+  subtitleEn        String?     @map("subtitle_en")
+  shortDescFr       String      @map("short_desc_fr")
+  shortDescEn       String      @map("short_desc_en")
+  longDescFr        String      @map("long_desc_fr") @db.Text
+  longDescEn        String      @map("long_desc_en") @db.Text
+  summaryFr         String      @map("summary_fr") @db.Text
+  summaryEn         String      @map("summary_en") @db.Text
+  productType       ProductType @default(EBOOK_PDF) @map("product_type")
+  primaryFormat     String      @default("PDF") @map("primary_format")
+  pageCount         Int?        @map("page_count")
+  language          String      @default("Français")
+  isbn              String?
+  publishedDate     DateTime?   @map("published_date")
+  coverUrl          String      @map("cover_url")
+  priceFcfa         Int         @map("price_fcfa")
+  promoPriceFcfa    Int?        @map("promo_price_fcfa")
+  isFree            Boolean     @default(false) @map("is_free")
+
+  // Gestion des démonstrations (Section 4 & 6)
+  isDemo            Boolean     @default(false) @map("is_demo")
+  demoNotice        String?     @map("demo_notice")
+  isArchived        Boolean     @default(false) @map("is_archived")
+  isHiddenFromPublic Boolean    @default(false) @map("is_hidden_from_public")
+  isPublished       Boolean     @default(true) @map("is_published")
+
+  // Mise en avant & métriques
+  isNewArrival      Boolean     @default(false) @map("is_new_arrival")
+  isBestseller      Boolean     @default(false) @map("is_bestseller")
+  isRecommended     Boolean     @default(false) @map("is_recommended")
+  collectionTag     String?     @map("collection_tag")
+  viewCount         Int         @default(0) @map("view_count")
+  salesCount        Int         @default(0) @map("sales_count")
+  maxDownloads      Int         @default(5) @map("max_downloads")
+  watermarkEnabled  Boolean     @default(false) @map("watermark_enabled")
+
+  categoryId  String   @map("category_id")
+  authorId    String   @map("author_id")
+  publisherId String?  @map("publisher_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  category  Category   @relation(fields: [categoryId], references: [id])
+  author    Author     @relation(fields: [authorId], references: [id])
+  publisher Publisher? @relation(fields: [publisherId], references: [id])
+
+  assets       DigitalAsset[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+  entitlements DigitalEntitlement[]
+  reviews      Review[]
+  favorites    Favorite[]
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([isPublished, isArchived, isHiddenFromPublic])
+  @@index([isDemo])
+  @@map("products")
+}
+
+enum AssetKind {
+  FREE_EXTRACT
+  FULL_PRODUCT
+}
+
+model DigitalAsset {
+  id            String    @id @default(cuid())
+  productId     String    @map("product_id")
+  assetKind     AssetKind @map("asset_kind")
+  format        String    // PDF, EPUB, MP3, ZIP, etc.
+  fileName      String    @map("file_name")
+  storagePath   String    @map("storage_path") // public path for FREE_EXTRACT, private path for FULL_PRODUCT
+  mimeType      String    @map("mime_type")
+  fileSizeBytes Int       @map("file_size_bytes")
+  isPrivate     Boolean   @default(true) @map("is_private")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  downloads Download[]
+
+  @@index([productId, assetKind])
+  @@map("digital_assets")
+}
+
+// ==========================================
+// 3. PANIER, COUPONS & COMMANDES
+// ==========================================
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  sessionId String?  @unique @map("session_id")
+  couponId  String?  @map("coupon_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  coupon Coupon?    @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  items  CartItem[]
+
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String   @map("cart_id")
+  productId String   @map("product_id")
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  discountType    String    @default("PERCENTAGE") @map("discount_type") // PERCENTAGE | FIXED_FCFA
+  discountValue   Int       @map("discount_value")
+  minOrderFcfa    Int       @default(0) @map("min_order_fcfa")
+  maxUses         Int?      @map("max_uses")
+  usedCount       Int       @default(0) @map("used_count")
+  startsAt        DateTime? @map("starts_at")
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  carts  Cart[]
+  orders Order[]
+
+  @@map("coupons")
+}
+
+enum OrderStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  reference       String      @unique // e.g. NXA-20261119-XXXX
+  userId          String      @map("user_id")
+  couponId        String?     @map("coupon_id")
+  subtotalFcfa    Int         @map("subtotal_fcfa")
+  discountFcfa    Int         @default(0) @map("discount_fcfa")
+  totalFcfa       Int         @map("total_fcfa")
+  currency        String      @default("XOF")
+  status          OrderStatus @default(PENDING)
+  isDemoOrder     Boolean     @default(false) @map("is_demo_order")
+  idempotencyKey  String?     @unique @map("idempotency_key")
+  customerEmail   String      @map("customer_email")
+  customerName    String      @map("customer_name")
+  customerPhone   String?     @map("customer_phone")
+  customerCountry String?     @default("BJ") @map("customer_country")
+  paidAt          DateTime?   @map("paid_at")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  user         User                 @relation(fields: [userId], references: [id])
+  coupon       Coupon?              @relation(fields: [couponId], references: [id])
+  items        OrderItem[]
+  payments     Payment[]
+  entitlements DigitalEntitlement[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  orderId       String  @map("order_id")
+  productId     String  @map("product_id")
+  titleSnapshot String  @map("title_snapshot")
+  unitPriceFcfa Int     @map("unit_price_fcfa")
+  quantity      Int     @default(1)
+  isDemo        Boolean @default(false) @map("is_demo")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+// ==========================================
+// 4. PAYMENT GATEWAY MANAGER (MULTI-AGRÉGATEURS)
+// ==========================================
+
+enum GatewayEnvironment {
+  TEST
+  PRODUCTION
+}
+
+model PaymentGateway {
+  id                  String             @id @default(cuid())
+  code                String             @unique // maketou, sebpay, saaspay, geneci
+  name                String
+  description         String?
+  isActive            Boolean            @default(false) @map("is_active")
+  isDefault           Boolean            @default(false) @map("is_default")
+  environment         GatewayEnvironment @default(TEST)
+  encryptedSecrets    String?            @map("encrypted_secrets") @db.Text // AES-256-GCM JSON
+  apiBaseUrl          String?            @map("api_base_url")
+  webhookUrl          String?            @map("webhook_url")
+  supportedCurrencies String[]           @default(["XOF"]) @map("supported_currencies")
+  supportedCountries  String[]           @default(["BJ", "CI", "SN", "TG", "BF", "ML"]) @map("supported_countries")
+  supportedOperators  String[]           @default(["MTN", "MOOV", "CELTIIS", "CARD"]) @map("supported_operators")
+  feePercent          Float              @default(0) @map("fee_percent")
+  feeFixedFcfa        Int                @default(0) @map("fee_fixed_fcfa")
+  priority            Int                @default(10)
+  lastTestStatus      String?            @map("last_test_status")
+  lastTestedAt        DateTime?          @map("last_tested_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  payments     Payment[]
+  transactions PaymentTransaction[]
+
+  @@map("payment_gateways")
+}
+
+enum PaymentStatus {
+  INITIATED
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String        @map("order_id")
+  gatewayId         String        @map("gateway_id")
+  gatewayCode       String        @map("gateway_code")
+  amountFcfa        Int           @map("amount_fcfa")
+  currency          String        @default("XOF")
+  feeFcfa           Int           @default(0) @map("fee_fcfa")
+  status            PaymentStatus @default(INITIATED)
+  externalReference String?       @map("external_reference")
+  redirectUrl       String?       @map("redirect_url")
+  idempotencyKey    String        @unique @map("idempotency_key")
+  verifiedAt        DateTime?     @map("verified_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  order        Order                @relation(fields: [orderId], references: [id])
+  gateway      PaymentGateway       @relation(fields: [gatewayId], references: [id])
+  transactions PaymentTransaction[]
+
+  @@index([orderId])
+  @@index([externalReference])
+  @@map("payments")
+}
+
+model PaymentTransaction {
+  id                String   @id @default(cuid())
+  paymentId         String   @map("payment_id")
+  gatewayId         String   @map("gateway_id")
+  eventType         String   @map("event_type") // INIT, WEBHOOK, VERIFY, REFUND, ERROR
+  status            String
+  externalTxId      String?  @map("external_tx_id")
+  rawPayload        Json?    @map("raw_payload")
+  signatureValid    Boolean? @map("signature_valid")
+  errorMessage      String?  @map("error_message")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  payment Payment        @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  gateway PaymentGateway @relation(fields: [gatewayId], references: [id])
+
+  @@index([paymentId])
+  @@map("payment_transactions")
+}
+
+// ==========================================
+// 5. LIVRAISON NUMÉRIQUE & TÉLÉCHARGEMENTS
+// ==========================================
+
+model DigitalEntitlement {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  productId     String    @map("product_id")
+  orderId       String    @map("order_id")
+  licenseKey    String    @unique @map("license_key")
+  maxDownloads  Int       @default(5) @map("max_downloads")
+  downloadCount Int       @default(0) @map("download_count")
+  isRevoked     Boolean   @default(false) @map("is_revoked")
+  expiresAt     DateTime? @map("expires_at")
+  grantedAt     DateTime  @default(now()) @map("granted_at")
+
+  user      User       @relation(fields: [userId], references: [id])
+  product   Product    @relation(fields: [productId], references: [id])
+  order     Order      @relation(fields: [orderId], references: [id])
+  downloads Download[]
+
+  @@unique([userId, productId, orderId])
+  @@index([userId])
+  @@map("digital_entitlements")
+}
+
+model Download {
+  id            String   @id @default(cuid())
+  userId        String?  @map("user_id")
+  entitlementId String?  @map("entitlement_id")
+  assetId       String   @map("asset_id")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  downloadedAt  DateTime @default(now()) @map("downloaded_at")
+
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  entitlement DigitalEntitlement? @relation(fields: [entitlementId], references: [id], onDelete: SetNull)
+  asset       DigitalAsset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([assetId])
+  @@map("downloads")
+}
+
+// ==========================================
+// 6. AVIS, FAVORIS, CMS & AUDIT
+// ==========================================
+
+model Review {
+  id         String   @id @default(cuid())
+  productId  String   @map("product_id")
+  userId     String   @map("user_id")
+  rating     Int      // 1 à 5
+  comment    String   @db.Text
+  isApproved Boolean  @default(true) @map("is_approved")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@map("reviews")
+}
+
+model Favorite {
+  userId    String   @map("user_id")
+  productId String   @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+  @@map("favorites")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Banner {
+  id        String   @id @default(cuid())
+  titleFr   String   @map("title_fr")
+  titleEn   String   @map("title_en")
+  subtitleFr String? @map("subtitle_fr")
+  subtitleEn String? @map("subtitle_en")
+  ctaLabelFr String? @map("cta_label_fr")
+  ctaLabelEn String? @map("cta_label_en")
+  ctaUrl    String?  @map("cta_url")
+  imageUrl  String?  @map("image_url")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("banners")
+}
+
+model CmsPage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  titleFr   String   @map("title_fr")
+  titleEn   String   @map("title_en")
+  contentFr String   @map("content_fr") @db.Text
+  contentEn String   @map("content_en") @db.Text
+  isPublished Boolean @default(true) @map("is_published")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("cms_pages")
+}
+
+model SiteSetting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  lang      String   @default("fr")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("newsletter_subscribers")
+}
+
