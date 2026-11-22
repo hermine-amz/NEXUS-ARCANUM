@@ -4,6 +4,7 @@ import path from "path";
 import { PDFDocument, rgb, StandardFonts, degrees } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { signDownloadToken, verifyDownloadToken } from "@/lib/security/crypto";
+import { getSupabaseAdminClient } from "@/lib/supabase";
 
 /**
  * Attribue les droits d'accès numériques après vérification stricte d'une commande payée (ou gratuite).
@@ -150,11 +151,25 @@ export async function serveProtectedAsset(params: {
   const fileNameOnly = path.basename(asset.storagePath);
   const diskPath = path.resolve(privateRoot, fileNameOnly);
 
-  if (!diskPath.startsWith(privateRoot + path.sep) || !fs.existsSync(diskPath)) {
-    return { ok: false, status: 404, error: "Fichier absent du stockage privé." };
+  let fileBuffer: Uint8Array | null = null;
+
+  // 1. Lecture depuis Supabase Storage (recommandé sur Vercel) si configuré
+  const supabaseAdmin = getSupabaseAdminClient();
+  if (supabaseAdmin) {
+    const bucket = process.env.SUPABASE_PRIVATE_BUCKET || "private-assets";
+    const { data, error } = await supabaseAdmin.storage.from(bucket).download(fileNameOnly);
+    if (!error && data) {
+      fileBuffer = new Uint8Array(await data.arrayBuffer());
+    }
   }
 
-  let fileBuffer: Uint8Array = fs.readFileSync(diskPath);
+  // 2. Fallback sur le stockage privé local (storage/private/)
+  if (!fileBuffer) {
+    if (!diskPath.startsWith(privateRoot + path.sep) || !fs.existsSync(diskPath)) {
+      return { ok: false, status: 404, error: "Fichier absent du stockage privé." };
+    }
+    fileBuffer = fs.readFileSync(diskPath);
+  }
 
   // Filigrane facultatif sur les PDF si activé sur le produit
   if (entitlement.product.watermarkEnabled && asset.mimeType === "application/pdf") {
