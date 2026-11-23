@@ -2,11 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
 import { DEMO_CATEGORIES } from "@/lib/data/demo-catalog";
 import { useApp } from "@/components/providers/AppProvider";
 
 export function Footer() {
+  const pathname = usePathname();
   const { locale } = useApp();
   const [consentVisible, setConsentVisible] = useState(false);
 
@@ -19,6 +21,10 @@ export function Footer() {
       // ignore
     }
   }, []);
+
+  if (pathname?.startsWith("/admin")) {
+    return null;
+  }
 
   const acceptConsent = () => {
     try {

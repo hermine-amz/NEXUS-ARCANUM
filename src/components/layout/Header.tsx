@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Search,
   ShoppingCart,
@@ -20,11 +20,16 @@ import { useApp } from "@/components/providers/AppProvider";
 import { DEMO_CATEGORIES } from "@/lib/data/demo-catalog";
 
 export function Header() {
+  const pathname = usePathname();
   const { locale, setLocale, t, cart, user } = useApp();
   const [query, setQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const router = useRouter();
+
+  if (pathname?.startsWith("/admin")) {
+    return null;
+  }
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

@@ -31,7 +31,11 @@ export default function ConnexionPage() {
       }
       await refreshUser();
       showToast("Connexion réussie !");
-      router.push("/compte/bibliotheque");
+      const roles: string[] = data.user?.roles || [];
+      const isAdmin = roles.some(
+        (r) => r === "SUPER_ADMIN" || r === "ADMIN" || r === "EDITOR"
+      );
+      router.push(isAdmin ? "/admin" : "/compte/bibliotheque");
     } catch {
       setError("Serveur inaccessible.");
     } finally {
