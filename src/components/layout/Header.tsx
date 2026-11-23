@@ -183,9 +183,7 @@ export function Header() {
             <Link href="/catalogue?filter=free" className="hover:text-gold-500 transition">
               {t.nav.free}
             </Link>
-            <Link href="/admin" className="ml-auto text-xs text-gold-500/90 hover:text-gold-500 transition">
-              {t.nav.admin}
-            </Link>
+
           </div>
         </nav>
 
@@ -230,13 +228,16 @@ export function Header() {
               >
                 {t.nav.library}
               </Link>
-              <Link
-                href="/admin"
-                onClick={() => setMobileMenuOpen(false)}
-                className="px-3 py-2 rounded-lg bg-gold-500/20 text-gold-500"
-              >
-                {t.nav.admin}
-              </Link>
+
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="px-3 py-2 rounded-lg bg-gold-500/20 text-gold-500"
+                >
+                  {t.nav.admin}
+                </Link>
+              )}
             </div>
             <div className="pt-2 border-t border-white/10">
               <p className="text-xs uppercase tracking-wider text-gold-500 mb-2">

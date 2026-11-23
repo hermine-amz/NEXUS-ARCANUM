@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   ShieldCheck,
   Sparkles,
-  Star,
   Zap,
   Mail,
 } from "lucide-react";
@@ -64,7 +63,7 @@ export function HomeClient({
   };
 
   return (
-    <div className="space-y-16 pb-16">
+    <div className="space-y-12 sm:space-y-16 pb-24 md:pb-16">
       {!dbConnected && (
         <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs py-2 px-4 text-center">
           Mode aperçu catalogue : vérifiez les droits Supabase (<code>GRANT</code>) pour activer les comptes, commandes et paiements en direct.
@@ -266,44 +265,6 @@ export function HomeClient({
         </div>
       </section>
 
-      {/* 14. Avis clients */}
-      <section className="bg-slate-100 py-14">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <h2 className="font-serif text-2xl sm:text-3xl font-bold text-navy-950 mb-8">
-            {t.sections.reviews}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              {
-                name: "Amina S. — Cotonou",
-                text: "L'extrait PDF gratuit permet de vérifier la qualité du contenu avant d'acheter. Téléchargement fluide sur téléphone.",
-              },
-              {
-                name: "Marc K. — Abidjan",
-                text: "Une vraie librairie généraliste africaine avec des titres en entrepreneuriat, IA et histoire difficiles à trouver ailleurs.",
-              },
-              {
-                name: "Clarisse D. — Dakar",
-                text: "Interface claire, prix affichés en FCFA sans surprise et bibliothèque personnelle très pratique.",
-              },
-            ].map((rev) => (
-              <div
-                key={rev.name}
-                className="p-6 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3"
-              >
-                <div className="flex gap-1 text-amber-400">
-                  {[...Array(5)].map((_, idx) => (
-                    <Star key={idx} className="w-4 h-4 fill-amber-400" />
-                  ))}
-                </div>
-                <p className="text-sm text-slate-700 leading-relaxed">&ldquo;{rev.text}&rdquo;</p>
-                <p className="text-xs font-bold text-navy-950">{rev.name}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* 15. Newsletter */}
       <section className="max-w-4xl mx-auto px-4 sm:px-6">
         <div className="rounded-3xl bg-navy-950 text-white p-8 sm:p-12 border border-gold-500/40 text-center space-y-4 shadow-xl">
@@ -363,7 +324,7 @@ function ProductSection({
           Voir plus <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {items.map((product) => (
           <ProductCard key={product.slug} product={product} />
         ))}

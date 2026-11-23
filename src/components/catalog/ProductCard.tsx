@@ -43,7 +43,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
   };
 
   return (
-    <article className="group bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-xl hover:border-gold-500/60 transition-all duration-300 flex flex-col">
+    <article className="group bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-lg hover:border-gold-500/60 transition-all duration-300 flex flex-col min-w-0">
       {/* Cover */}
       <Link
         href={`/produit/${product.slug}`}
@@ -73,7 +73,7 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
       </Link>
 
       {/* Content */}
-      <div className="p-4 flex-1 flex flex-col gap-2">
+      <div className="p-3 sm:p-4 flex-1 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
           <span className="truncate font-medium text-navy-800">{categoryName}</span>
           <span className="inline-flex items-center gap-1 text-amber-500 font-semibold shrink-0">
@@ -117,41 +117,37 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
           )}
         </div>
 
-        {/* 4 mandatory action buttons from Section 5 */}
         <div className="pt-2 space-y-2">
-          <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-navy-900 text-white hover:bg-navy-800 text-xs sm:text-sm font-semibold transition cursor-pointer"
+          >
+            <ShoppingCart className="w-4 h-4 shrink-0" />
+            Ajouter au panier
+          </button>
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <Link
+              href={`/produit/${product.slug}`}
+              className="font-semibold text-navy-900 hover:text-gold-600 transition underline-offset-4 hover:underline"
+            >
+              Voir le livre
+            </Link>
             <a
               href={product.extractUrl}
               download
-              className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg border border-slate-200 text-slate-700 hover:border-navy-900 hover:bg-slate-50 text-[11px] font-semibold transition"
+              className="inline-flex items-center gap-1 text-slate-600 hover:text-navy-900 transition"
               title={t.product.downloadExtract}
             >
-              <Download className="w-3.5 h-3.5 text-gold-600 shrink-0" />
-              <span className="truncate">Extrait PDF</span>
+              <Download className="w-3.5 h-3.5 text-gold-600" />
+              Extrait PDF
             </a>
-            <Link
-              href={`/produit/${product.slug}`}
-              className="inline-flex items-center justify-center px-2.5 py-2 rounded-lg border border-slate-200 text-navy-900 hover:bg-slate-50 text-[11px] font-semibold transition"
-            >
-              Découvrir
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg bg-navy-900 text-white hover:bg-navy-800 text-[11px] font-semibold transition cursor-pointer"
-            >
-              <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Panier</span>
-            </button>
             <button
               type="button"
               onClick={handleBuyNow}
-              className="inline-flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg bg-gold-500 text-navy-950 hover:bg-gold-600 text-[11px] font-bold transition cursor-pointer"
+              className="font-semibold text-gold-600 hover:text-gold-500 transition"
             >
-              <Zap className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">Acheter</span>
+              Acheter
             </button>
           </div>
         </div>
