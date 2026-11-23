@@ -79,7 +79,7 @@ export function CatalogView({
         <div>
           <h1 className="font-serif text-3xl sm:text-4xl font-bold text-navy-950">
             {selectedCategory
-              ? categories.find((c) => c.slug === selectedCategory)?.nameFr || "Catalogue"
+              ? categories.find((c) => c.slug === selectedCategory)?.[locale === "en" ? "nameEn" : "nameFr"] || "Catalogue"
               : "Catalogue Numérique"}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
@@ -95,7 +95,8 @@ export function CatalogView({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filtrer par titre, auteur..."
+              placeholder={locale === "en" ? "Search by title or author..." : "Filtrer par titre, auteur..."}
+              aria-label={locale === "en" ? "Search by title or author" : "Filtrer par titre ou auteur"}
               className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm w-full sm:w-64"
             />
           </div>
@@ -125,7 +126,7 @@ export function CatalogView({
           aria-label="Catégorie"
           className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-slate-50"
         >
-          <option value="">Toutes les 16 catégories</option>
+          <option value="">Toutes les {categories.length} catégories</option>
           {categories.map((c) => (
             <option key={c.slug} value={c.slug}>
               {locale === "en" ? c.nameEn : c.nameFr}
@@ -188,7 +189,7 @@ export function CatalogView({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           {filtered.map((p) => (
             <ProductCard key={p.slug} product={p} />
           ))}

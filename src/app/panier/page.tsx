@@ -132,12 +132,12 @@ export default function PanierPage() {
               return (
                 <div
                   key={item.id}
-                  className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center gap-4"
+                  className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
                 >
                   <img
                     src={item.coverUrl}
                     alt={item.titleFr}
-                    className="w-16 h-22 object-cover rounded-lg border border-slate-200 shrink-0"
+                    className="w-20 h-28 sm:w-16 sm:h-22 object-cover rounded-lg border border-slate-200 shrink-0"
                   />
                   <div className="flex-1 min-w-0">
                     <Link
@@ -155,7 +155,7 @@ export default function PanierPage() {
                       </span>
                     )}
                   </div>
-                  <div className="text-right shrink-0 space-y-1">
+                  <div className="w-full sm:w-auto flex sm:block items-center justify-between sm:text-right shrink-0 space-y-1">
                     <p className="font-extrabold text-navy-950">
                       {item.isFree ? "Gratuit" : formatFcfa(effective)}
                     </p>
@@ -173,11 +173,11 @@ export default function PanierPage() {
           </div>
 
           {/* Summary & Payment Gateway Selector */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="lg:col-span-4 space-y-4 lg:sticky lg:top-28 lg:self-start">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-5 shadow-sm">
               <h2 className="font-serif text-xl font-bold text-navy-950">Récapitulatif</h2>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={couponCode}
