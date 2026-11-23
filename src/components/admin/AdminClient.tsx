@@ -494,14 +494,18 @@ export function AdminClient({
     <div className="min-h-screen bg-[#F7F8FA] text-slate-900 flex">
       {/* Mobile overlay */}
       {sidebarOpen && (
-        <div
+        <button
+          type="button"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-slate-900/30 z-40 lg:hidden"
+          aria-label="Fermer le menu d’administration"
+          className="fixed inset-0 bg-slate-900/30 z-40 lg:hidden cursor-default"
         />
       )}
 
       {/* Left Sidebar (style épuré inspiré Cockpit) */}
       <aside
+        id="admin-sidebar"
+        aria-label="Menu d’administration"
         className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         }`}
@@ -536,7 +540,7 @@ export function AdminClient({
           </div>
 
           {/* Navigation */}
-          <div className="space-y-1.5">
+          <nav aria-label="Navigation d’administration" className="space-y-1.5">
             <p className="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
               Navigation
             </p>
@@ -551,6 +555,7 @@ export function AdminClient({
                     setTab(item.id);
                     setSidebarOpen(false);
                   }}
+                  aria-current={isActive ? "page" : undefined}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition cursor-pointer relative ${
                     isActive
                       ? "bg-[#FEFCE8] text-slate-900 border border-amber-200/80 shadow-xs"
@@ -574,7 +579,7 @@ export function AdminClient({
                 </button>
               );
             })}
-          </div>
+          </nav>
         </div>
 
         {/* Bottom status & lock session */}
@@ -618,6 +623,8 @@ export function AdminClient({
                 onClick={() => setSidebarOpen(true)}
                 className="lg:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-700"
                 aria-label="Ouvrir la navigation"
+                aria-expanded={sidebarOpen}
+                aria-controls="admin-sidebar"
               >
                 <Menu className="w-5 h-5" />
               </button>
@@ -688,6 +695,7 @@ export function AdminClient({
                     <form onSubmit={handleAddTask} className="flex gap-2">
                       <input
                         type="text"
+                        aria-label="Nouvelle tâche à ajouter"
                         value={taskText}
                         onChange={(e) => setTaskText(e.target.value)}
                         placeholder="Ex: Ajouter la clé API Maketou..."

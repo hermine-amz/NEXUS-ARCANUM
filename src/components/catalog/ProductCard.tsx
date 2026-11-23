@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, ShoppingCart, Star, Zap } from "lucide-react";
+import { Download, ShoppingCart, Zap } from "lucide-react";
 import { StorefrontProduct } from "@/lib/data/storefront";
 import { useApp } from "@/components/providers/AppProvider";
 
@@ -76,10 +76,6 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
       <div className="p-4 flex-1 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
           <span className="truncate font-medium text-navy-800">{categoryName}</span>
-          <span className="inline-flex items-center gap-1 text-amber-500 font-semibold shrink-0">
-            <Star className="w-3.5 h-3.5 fill-amber-400" />
-            {product.avgRating}
-          </span>
         </div>
 
         <Link

@@ -10,7 +10,6 @@ import {
   Globe,
   Share2,
   ShoppingCart,
-  Star,
   Zap,
   AlertTriangle,
 } from "lucide-react";
@@ -27,7 +26,7 @@ export function ProductDetailClient({
 }) {
   const { locale, t, addToCart } = useApp();
   const router = useRouter();
-  const [tab, setTab] = useState<"desc" | "summary" | "reviews">("desc");
+  const [tab, setTab] = useState<"desc" | "summary">("desc");
 
   const title = locale === "en" ? product.titleEn : product.titleFr;
   const subtitle = locale === "en" ? product.subtitleEn : product.subtitleFr;
@@ -112,10 +111,7 @@ export function ProductDetailClient({
               <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold">
                 {product.primaryFormat}
               </span>
-              <span className="inline-flex items-center gap-1 text-amber-500 font-bold ml-auto">
-                <Star className="w-4 h-4 fill-amber-400" />
-                {product.avgRating} ({product.reviewCount} avis)
-              </span>
+
             </div>
 
             <h1 className="font-serif text-3xl sm:text-4xl font-bold text-navy-950">
@@ -249,17 +245,6 @@ export function ProductDetailClient({
               >
                 {t.product.summary}
               </button>
-              <button
-                type="button"
-                onClick={() => setTab("reviews")}
-                className={`px-5 py-3.5 text-sm font-bold border-b-2 transition cursor-pointer ${
-                  tab === "reviews"
-                    ? "border-gold-500 text-navy-950 bg-white"
-                    : "border-transparent text-slate-500 hover:text-navy-900"
-                }`}
-              >
-                {t.product.reviews} ({product.reviewCount})
-              </button>
             </div>
 
             <div className="p-6 text-sm text-slate-700 leading-relaxed">
@@ -274,20 +259,6 @@ export function ProductDetailClient({
                   ))}
                 </ul>
               )}
-              {tab === "reviews" && (
-                <div className="space-y-4">
-                  <p className="text-slate-600">
-                    Note moyenne : <strong>{product.avgRating} / 5</strong> basée sur{" "}
-                    {product.reviewCount} évaluations vérifiées.
-                  </p>
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-                    <p className="font-semibold text-navy-950">Lecteur vérifié</p>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Contenu structuré, extrait PDF fidèle et accès rapide depuis la bibliothèque.
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -299,7 +270,7 @@ export function ProductDetailClient({
           <h2 className="font-serif text-2xl font-bold text-navy-950">
             {t.product.similar}
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
             {similar.map((p) => (
               <ProductCard key={p.slug} product={p} />
             ))}

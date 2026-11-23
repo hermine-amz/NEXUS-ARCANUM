@@ -144,11 +144,6 @@ export function Footer() {
                   Politique de remboursement
                 </Link>
               </li>
-              <li>
-                <Link href="/admin" className="text-gold-500 hover:underline">
-                  Espace Administration
-                </Link>
-              </li>
             </ul>
           </div>
         </div>
