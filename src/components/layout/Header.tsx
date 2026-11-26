@@ -202,9 +202,6 @@ export function Header() {
             <Link href="/catalogue?filter=promo" className="hover:text-gold-500 transition">
               {t.nav.promotions}
             </Link>
-            <Link href="/catalogue?filter=free" className="hover:text-gold-500 transition">
-              {t.nav.free}
-            </Link>
             <Link href="/admin" className="ml-auto text-xs text-gold-500/90 hover:text-gold-500 transition">
               {t.nav.admin}
             </Link>
@@ -239,11 +236,11 @@ export function Header() {
                 Catalogue complet
               </Link>
               <Link
-                href="/catalogue?filter=free"
+                href="/catalogue?filter=promo"
                 onClick={() => setMobileMenuOpen(false)}
                 className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10"
               >
-                {t.nav.free}
+                {t.nav.promotions}
               </Link>
               <Link
                 href="/compte/bibliotheque"

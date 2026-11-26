@@ -167,13 +167,6 @@ export function ProductDetailClient({
 
         {/* Details */}
         <div className="lg:col-span-8 space-y-6">
-          {product.isDemo && (
-            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>{t.product.demoBadge} — Prix fictif, aucun paiement réel déclenché.</span>
-            </div>
-          )}
-
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <Link

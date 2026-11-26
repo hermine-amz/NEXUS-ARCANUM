@@ -117,11 +117,6 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/catalogue?filter=free" className="hover:text-gold-500 transition">
-                  {isEn ? "Free books" : "Livres gratuits"}
-                </Link>
-              </li>
-              <li>
                 <Link href="/compte/bibliotheque" className="hover:text-gold-500 transition">
                   {isEn ? "My Digital Library" : "Ma Bibliothèque numérique"}
                 </Link>

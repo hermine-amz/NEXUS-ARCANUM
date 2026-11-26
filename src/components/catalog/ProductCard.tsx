@@ -61,11 +61,6 @@ export function ProductCard({ product }: { product: StorefrontProduct }) {
           <span className="px-2 py-0.5 rounded-md bg-navy-950/90 text-gold-500 text-[10px] font-bold tracking-wider border border-gold-500/40 backdrop-blur-xs">
             {product.primaryFormat}
           </span>
-          {product.isDemo && (
-            <span className="px-2 py-0.5 rounded-md bg-amber-500 text-navy-950 text-[10px] font-extrabold tracking-wide">
-              {isEn ? "DEMO" : "DÉMO"}
-            </span>
-          )}
         </div>
         {product.promoPriceFcfa !== null && !product.isFree && (
           <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-bold shadow-xs">

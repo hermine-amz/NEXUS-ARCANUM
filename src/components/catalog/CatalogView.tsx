@@ -194,7 +194,6 @@ export function CatalogView({
           <option value="new">{isEn ? "New Arrivals" : "Nouveautés"}</option>
           <option value="bestsellers">{isEn ? "Bestsellers" : "Meilleures ventes"}</option>
           <option value="promo">{isEn ? "Deals" : "Promotions"}</option>
-          <option value="free">{isEn ? "Free" : "Gratuits"}</option>
         </select>
 
         {(query || selectedCategory || selectedFormat || selectedFilter) && (

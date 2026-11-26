@@ -118,11 +118,11 @@ export function HomeClient({
                 <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
-                href="/catalogue?filter=free"
+                href="/catalogue?filter=promo"
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-white/10 text-white border border-white/20 font-semibold text-sm hover:bg-white/15 transition"
               >
                 <BookOpen className="w-4 h-4 text-gold-500" />
-                <span>{t.hero.freeCta}</span>
+                <span>{t.nav.promotions}</span>
               </Link>
             </div>
             <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10 text-xs sm:text-sm">
@@ -269,13 +269,6 @@ export function HomeClient({
         title={t.sections.promotions}
         href="/catalogue?filter=promo"
         items={promotions}
-      />
-
-      {/* 12. Livres gratuits */}
-      <ProductSection
-        title={t.sections.freeBooks}
-        href="/catalogue?filter=free"
-        items={freeBooks}
       />
 
       {/* 13. Auteurs à découvrir */}
