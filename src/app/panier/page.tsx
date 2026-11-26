@@ -333,15 +333,6 @@ export default function PanierPage() {
                         ? "No active payment gateway configured."
                         : "Aucun agrégateur actif configuré dans l'administration."}
                     </p>
-                  ) : routingMode === "MODE_C" ? (
-                    <div className="p-3 rounded-xl bg-[#FEFCE8] border border-amber-200 text-xs text-amber-950 flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                      <span>
-                        {locale === "en"
-                          ? "Smart routing enabled: the best available payment provider is selected automatically."
-                          : "Paiement sécurisé automatique : le meilleur prestataire disponible est sélectionné selon votre opérateur."}
-                      </span>
-                    </div>
                   ) : (
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                       <p className="font-bold text-navy-950">
@@ -350,7 +341,7 @@ export default function PanierPage() {
                       <p className="text-slate-500 mt-0.5">
                         {locale === "en"
                           ? "Encrypted payment processed securely."
-                          : "Paiement chiffré traité automatiquement en toute sécurité."}
+                          : "Paiement chiffré traité en toute sécurité."}
                       </p>
                     </div>
                   )}

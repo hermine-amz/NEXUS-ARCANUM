@@ -27,10 +27,8 @@ export async function GET() {
         .order("priority", { ascending: true }),
     ]);
 
-    const routingMode = setting?.value === "MODE_C" ? "MODE_C" : "MODE_A";
-
     return NextResponse.json({
-      routingMode,
+      routingMode: "MODE_A",
       gateways: (gateways || []).map((g) => ({
         code: g.code,
         name: g.name,

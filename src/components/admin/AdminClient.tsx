@@ -1072,7 +1072,7 @@ export function AdminClient({
                             Alertes Paiements & Agrégateurs
                           </h2>
                           <p className="text-xs text-slate-400">
-                            Mode actif : {routingMode} • {gateways.filter((g) => g.isActive).length} passerelles actives
+                            {gateways.filter((g) => g.isActive).length} passerelles actives
                           </p>
                         </div>
                       </div>
@@ -1655,14 +1655,14 @@ export function AdminClient({
             {/* ========================================== */}
             {tab === "payments" && (
               <div className="space-y-6">
-                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
+                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <h2 className="font-bold text-sm text-slate-900">
-                        Mode de routage des paiements
+                        Agrégateurs de paiement ({gateways.length})
                       </h2>
                       <p className="text-xs text-slate-400">
-                        Choisissez comment NEXUSARCANUM SHOP sélectionne l&apos;agrégateur au checkout.
+                        Activez vos prestataires et choisissez celui défini par défaut pour encaisser les commandes.
                       </p>
                     </div>
                     <button
@@ -1673,36 +1673,6 @@ export function AdminClient({
                       <Plus className="w-4 h-4" />
                       <span>Ajouter un agrégateur</span>
                     </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {[
-                      {
-                        id: "MODE_A",
-                        title: "Mode A — Agrégateur principal",
-                        desc: "Tous les paiements passent automatiquement par l'agrégateur défini par défaut.",
-                      },
-                      {
-                        id: "MODE_C",
-                        title: "Mode C — Routage intelligent",
-                        desc: "Choix automatique selon le pays, la devise, l'opérateur et les frais les plus bas.",
-                      },
-                    ].map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() =>
-                          handleRoutingModeChange(m.id as "MODE_A" | "MODE_B" | "MODE_C")
-                        }
-                        className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                          routingMode === m.id
-                            ? "border-amber-300 bg-[#FEFCE8] shadow-sm"
-                            : "border-slate-200 bg-slate-50/40 hover:bg-slate-50"
-                        }`}
-                      >
-                        <p className="font-bold text-xs text-slate-900">{m.title}</p>
-                        <p className="text-[11px] text-slate-500 mt-1">{m.desc}</p>
-                      </button>
-                    ))}
                   </div>
                 </section>
 
