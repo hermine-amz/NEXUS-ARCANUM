@@ -212,18 +212,6 @@ export default function PanierPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Cart Items */}
           <div className="lg:col-span-8 space-y-4">
-            {hasDemoItems && (
-              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm flex items-start gap-3 shadow-sm">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">Produits de démonstration détectés</p>
-                  <p className="mt-0.5">
-                    Les produits de démonstration affichent un prix fictif et ne déclenchent jamais de paiement réel. Vous pouvez télécharger gratuitement leurs extraits PDF depuis chaque fiche.
-                  </p>
-                </div>
-              </div>
-            )}
-
             {cart.map((item) => {
               const effective = item.isFree ? 0 : item.promoPriceFcfa ?? item.priceFcfa;
               return (
@@ -246,11 +234,6 @@ export default function PanierPage() {
                     <p className="text-xs text-slate-500">
                       {item.authorName} • {item.primaryFormat}
                     </p>
-                    {item.isDemo && (
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
-                        DÉMO — NON COMMERCIAL
-                      </span>
-                    )}
                   </div>
                   <div className="text-right shrink-0 space-y-1">
                     <p className="font-extrabold text-navy-950">

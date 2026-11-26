@@ -1021,11 +1021,6 @@ export function ProductManageClient({ productId }: { productId: string }) {
                     <span className="px-2 py-0.5 rounded bg-navy-950/90 text-gold-500 text-[10px] font-bold border border-gold-500/40">
                       {form.primaryFormat}
                     </span>
-                    {form.isDemo && (
-                      <span className="px-2 py-0.5 rounded bg-amber-500 text-navy-950 text-[10px] font-extrabold">
-                        DÉMO
-                      </span>
-                    )}
                   </div>
                   {discountPct > 0 && (
                     <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">
