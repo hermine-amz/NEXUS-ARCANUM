@@ -33,7 +33,7 @@ export default function RootLayout({
       lang="fr"
       className={`${playfair.variable} ${plusJakarta.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
+      <body className="min-h-full flex flex-col bg-[#EEF2F6] text-slate-900">
         <AppProvider>
           <Header />
           <main className="flex-1">{children}</main>

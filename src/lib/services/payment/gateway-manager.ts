@@ -9,14 +9,18 @@ import {
 } from "./types";
 import { MaketouConnector } from "./connectors/maketou";
 import { SebPayConnector } from "./connectors/sebpay";
+import { FedaPayConnector } from "./connectors/fedapay";
+import { KkiapayConnector } from "./connectors/kkiapay";
 import { ConfigurableExternalConnector } from "./connectors/placeholder";
 
 const CONNECTOR_REGISTRY: Record<string, IPaymentGateway> = {
   maketou: new MaketouConnector(),
+  fedapay: new FedaPayConnector(),
+  kkiapay: new KkiapayConnector(),
   sebpay: new SebPayConnector(),
   saaspay: new ConfigurableExternalConnector(
     "saaspay",
-    "SaaSPay nécessite la confirmation de la documentation API officielle et de vos clés."
+    "Collez votre Clé API SasPay dans la configuration pour activer."
   ),
   geneci: new ConfigurableExternalConnector(
     "geneci",

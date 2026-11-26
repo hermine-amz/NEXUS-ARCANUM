@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Filter, Search, X } from "lucide-react";
 import { StorefrontCategory, StorefrontProduct } from "@/lib/data/storefront";
 import { ProductCard } from "./ProductCard";
@@ -20,11 +20,24 @@ export function CatalogView({
   initialFilter?: string;
 }) {
   const { locale } = useApp();
+  const isEn = locale === "en";
   const [query, setQuery] = useState(initialQuery);
   const [selectedCategory, setSelectedCategory] = useState(initialCategorySlug);
   const [selectedFormat, setSelectedFormat] = useState("");
   const [selectedFilter, setSelectedFilter] = useState(initialFilter);
   const [sortBy, setSortBy] = useState<"default" | "price_asc" | "price_desc">("default");
+
+  useEffect(() => {
+    setQuery(initialQuery);
+  }, [initialQuery]);
+
+  useEffect(() => {
+    setSelectedCategory(initialCategorySlug);
+  }, [initialCategorySlug]);
+
+  useEffect(() => {
+    setSelectedFilter(initialFilter);
+  }, [initialFilter]);
 
   const formats = useMemo(
     () => Array.from(new Set(products.map((p) => p.primaryFormat))),
@@ -79,11 +92,31 @@ export function CatalogView({
         <div>
           <h1 className="font-serif text-3xl sm:text-4xl font-bold text-navy-950">
             {selectedCategory
-              ? categories.find((c) => c.slug === selectedCategory)?.nameFr || "Catalogue"
+              ? (() => {
+                  const found = categories.find((c) => c.slug === selectedCategory);
+                  return found ? (isEn ? found.nameEn : found.nameFr) : isEn ? "Catalog" : "Catalogue";
+                })()
+              : selectedFilter === "new"
+              ? isEn ? "New Arrivals" : "Nouveautés"
+              : selectedFilter === "bestsellers"
+              ? isEn ? "Bestsellers" : "Meilleures ventes"
+              : selectedFilter === "promo"
+              ? isEn ? "Current Deals" : "Promotions"
+              : selectedFilter === "free"
+              ? isEn ? "Free Books" : "Livres gratuits"
+              : isEn
+              ? "Digital Catalog"
               : "Catalogue Numérique"}
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            {filtered.length} {filtered.length > 1 ? "ouvrages disponibles" : "ouvrage disponible"}
+            {filtered.length}{" "}
+            {isEn
+              ? filtered.length > 1
+                ? "books available"
+                : "book available"
+              : filtered.length > 1
+              ? "ouvrages disponibles"
+              : "ouvrage disponible"}
           </p>
         </div>
 
@@ -95,19 +128,19 @@ export function CatalogView({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filtrer par titre, auteur..."
+              placeholder={isEn ? "Filter by title, author..." : "Filtrer par titre, auteur..."}
               className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm w-full sm:w-64"
             />
           </div>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            aria-label="Trier par"
+            aria-label={isEn ? "Sort by" : "Trier par"}
             className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium"
           >
-            <option value="default">Pertinence</option>
-            <option value="price_asc">Prix croissant</option>
-            <option value="price_desc">Prix décroissant</option>
+            <option value="default">{isEn ? "Relevance" : "Pertinence"}</option>
+            <option value="price_asc">{isEn ? "Price: Low to High" : "Prix croissant"}</option>
+            <option value="price_desc">{isEn ? "Price: High to Low" : "Prix décroissant"}</option>
           </select>
         </div>
       </div>
@@ -116,19 +149,23 @@ export function CatalogView({
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center gap-3">
         <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-navy-900 mr-2">
           <Filter className="w-3.5 h-3.5 text-gold-600" />
-          Filtres :
+          {isEn ? "Filters:" : "Filtres :"}
         </span>
 
         <select
           value={selectedCategory}
           onChange={(e) => setSelectedCategory(e.target.value)}
-          aria-label="Catégorie"
+          aria-label={isEn ? "Category" : "Catégorie"}
           className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-slate-50"
         >
-          <option value="">Toutes les 16 catégories</option>
+          <option value="">
+            {isEn
+              ? `All ${categories.length} categories`
+              : `Toutes les ${categories.length} catégories`}
+          </option>
           {categories.map((c) => (
             <option key={c.slug} value={c.slug}>
-              {locale === "en" ? c.nameEn : c.nameFr}
+              {isEn ? c.nameEn : c.nameFr}
             </option>
           ))}
         </select>
@@ -139,7 +176,7 @@ export function CatalogView({
           aria-label="Format"
           className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-slate-50"
         >
-          <option value="">Tous formats</option>
+          <option value="">{isEn ? "All formats" : "Tous formats"}</option>
           {formats.map((f) => (
             <option key={f} value={f}>
               {f}
@@ -150,14 +187,14 @@ export function CatalogView({
         <select
           value={selectedFilter}
           onChange={(e) => setSelectedFilter(e.target.value)}
-          aria-label="Sélection"
+          aria-label={isEn ? "Selection" : "Sélection"}
           className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium bg-slate-50"
         >
-          <option value="">Toutes sélections</option>
-          <option value="new">Nouveautés</option>
-          <option value="bestsellers">Meilleures ventes</option>
-          <option value="promo">Promotions</option>
-          <option value="free">Gratuits</option>
+          <option value="">{isEn ? "All selections" : "Toutes sélections"}</option>
+          <option value="new">{isEn ? "New Arrivals" : "Nouveautés"}</option>
+          <option value="bestsellers">{isEn ? "Bestsellers" : "Meilleures ventes"}</option>
+          <option value="promo">{isEn ? "Deals" : "Promotions"}</option>
+          <option value="free">{isEn ? "Free" : "Gratuits"}</option>
         </select>
 
         {(query || selectedCategory || selectedFormat || selectedFilter) && (

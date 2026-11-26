@@ -20,10 +20,19 @@ export function HomeClient({
   categories,
   products,
   dbConnected,
+  heroBanner = null,
 }: {
   categories: StorefrontCategory[];
   products: StorefrontProduct[];
   dbConnected: boolean;
+  heroBanner?: {
+    titleFr: string;
+    titleEn: string;
+    subtitleFr: string | null;
+    subtitleEn: string | null;
+    ctaLabelFr: string | null;
+    ctaUrl: string | null;
+  } | null;
 }) {
   const { locale, t } = useApp();
   const [newsletterEmail, setNewsletterEmail] = useState("");
@@ -84,17 +93,28 @@ export function HomeClient({
               {t.hero.badge}
             </span>
             <h1 className="font-serif text-3xl sm:text-5xl font-bold leading-tight text-white">
-              {t.hero.title}
+              {heroBanner
+                ? locale === "en"
+                  ? heroBanner.titleEn
+                  : heroBanner.titleFr
+                : t.hero.title}
             </h1>
             <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
-              {t.hero.subtitle}
+              {heroBanner
+                ? (locale === "en" ? heroBanner.subtitleEn : heroBanner.subtitleFr) ||
+                  t.hero.subtitle
+                : t.hero.subtitle}
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
               <Link
-                href="/catalogue"
+                href={heroBanner?.ctaUrl || "/catalogue"}
                 className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl bg-gold-500 text-navy-950 font-bold text-sm hover:bg-gold-600 transition shadow-lg shadow-gold-500/20"
               >
-                <span>{t.hero.exploreCta}</span>
+                <span>
+                  {locale === "en"
+                    ? t.hero.exploreCta
+                    : heroBanner?.ctaLabelFr || t.hero.exploreCta}
+                </span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
@@ -108,15 +128,19 @@ export function HomeClient({
             <div className="grid grid-cols-3 gap-4 pt-6 border-t border-white/10 text-xs sm:text-sm">
               <div className="flex items-center gap-2 text-slate-300">
                 <Zap className="w-4 h-4 text-gold-500 shrink-0" />
-                <span>Livraison instantanée</span>
+                <span>{locale === "en" ? "Instant delivery" : "Livraison instantanée"}</span>
               </div>
               <div className="flex items-center gap-2 text-slate-300">
                 <ShieldCheck className="w-4 h-4 text-gold-500 shrink-0" />
-                <span>Paiement sécurisé</span>
+                <span>{locale === "en" ? "Secure payment" : "Paiement sécurisé"}</span>
               </div>
               <div className="flex items-center gap-2 text-slate-300">
                 <CheckCircle2 className="w-4 h-4 text-gold-500 shrink-0" />
-                <span>16 catégories riches</span>
+                <span>
+                  {locale === "en"
+                    ? `${categories.length} rich categories`
+                    : `${categories.length} catégories riches`}
+                </span>
               </div>
             </div>
           </div>
@@ -152,12 +176,12 @@ export function HomeClient({
             href="/catalogue"
             className="text-sm font-semibold text-navy-900 hover:text-gold-600 inline-flex items-center gap-1"
           >
-            Tout voir <ArrowRight className="w-4 h-4" />
+            {locale === "en" ? "See all" : "Tout voir"} <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-          {categories.map((cat) => (
+          {categories.map((cat, idx) => (
             <Link
               key={cat.slug}
               href={`/categories/${cat.slug}`}
@@ -165,10 +189,17 @@ export function HomeClient({
             >
               <div className="flex items-start justify-between gap-2">
                 <span className="text-xs font-bold text-gold-600">
-                  {String(cat.sortOrder).padStart(2, "0")}
+                  {String(idx + 1).padStart(2, "0")}
                 </span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
-                  {cat.productCount} {cat.productCount > 1 ? "titres" : "titre"}
+                  {cat.productCount}{" "}
+                  {locale === "en"
+                    ? cat.productCount > 1
+                      ? "titles"
+                      : "title"
+                    : cat.productCount > 1
+                    ? "titres"
+                    : "titre"}
                 </span>
               </div>
               <h3 className="font-semibold text-sm sm:text-base text-navy-950 group-hover:text-gold-600 transition">
@@ -200,7 +231,9 @@ export function HomeClient({
               {t.sections.collections}
             </h2>
             <p className="text-sm text-slate-300 mt-1">
-              Des sélections éditoriales conçues pour approfondir un domaine clé.
+              {locale === "en"
+                ? "Editorial selections curated to dive deep into key disciplines."
+                : "Des sélections éditoriales conçues pour approfondir un domaine clé."}
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -215,7 +248,8 @@ export function HomeClient({
                 </span>
                 <h3 className="font-serif text-xl font-bold">{col}</h3>
                 <span className="text-xs text-slate-300 inline-flex items-center gap-1">
-                  Découvrir la sélection <ArrowRight className="w-3.5 h-3.5 text-gold-500" />
+                  {locale === "en" ? "Explore selection" : "Découvrir la sélection"}{" "}
+                  <ArrowRight className="w-3.5 h-3.5 text-gold-500" />
                 </span>
               </Link>
             ))}
@@ -260,7 +294,9 @@ export function HomeClient({
                 {author.charAt(0)}
               </div>
               <p className="font-semibold text-sm text-navy-950 truncate">{author}</p>
-              <p className="text-[11px] text-slate-500">Auteur partenaire</p>
+              <p className="text-[11px] text-slate-500">
+                {locale === "en" ? "Partner Author" : "Auteur partenaire"}
+              </p>
             </Link>
           ))}
         </div>
@@ -276,15 +312,24 @@ export function HomeClient({
             {[
               {
                 name: "Amina S. — Cotonou",
-                text: "L'extrait PDF gratuit permet de vérifier la qualité du contenu avant d'acheter. Téléchargement fluide sur téléphone.",
+                text:
+                  locale === "en"
+                    ? "The 4-page preview lets me verify the book's quality before buying. Smooth download on mobile."
+                    : "L'aperçu des 4 premières pages permet de vérifier la qualité du contenu avant d'acheter. Téléchargement fluide sur téléphone.",
               },
               {
                 name: "Marc K. — Abidjan",
-                text: "Une vraie librairie généraliste africaine avec des titres en entrepreneuriat, IA et histoire difficiles à trouver ailleurs.",
+                text:
+                  locale === "en"
+                    ? "A true African digital bookstore with entrepreneurship, spirituality and personal growth guides hard to find elsewhere."
+                    : "Une vraie librairie numérique africaine avec des titres en entrepreneuriat, spiritualité et développement personnel difficiles à trouver ailleurs.",
               },
               {
                 name: "Clarisse D. — Dakar",
-                text: "Interface claire, prix affichés en FCFA sans surprise et bibliothèque personnelle très pratique.",
+                text:
+                  locale === "en"
+                    ? "Clean interface, transparent FCFA pricing and a very convenient personal digital library."
+                    : "Interface claire, prix affichés en FCFA sans surprise et bibliothèque personnelle très pratique.",
               },
             ].map((rev) => (
               <div
@@ -323,7 +368,7 @@ export function HomeClient({
               required
               value={newsletterEmail}
               onChange={(e) => setNewsletterEmail(e.target.value)}
-              placeholder="votre@email.com"
+              placeholder={locale === "en" ? "your@email.com" : "votre@email.com"}
               className="flex-1 rounded-xl bg-white text-slate-900 px-4 py-3 text-sm"
             />
             <button
@@ -351,6 +396,7 @@ function ProductSection({
   href: string;
   items: StorefrontProduct[];
 }) {
+  const { locale } = useApp();
   if (items.length === 0) return null;
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6">
@@ -360,7 +406,7 @@ function ProductSection({
           href={href}
           className="text-sm font-semibold text-navy-900 hover:text-gold-600 inline-flex items-center gap-1 shrink-0"
         >
-          Voir plus <ArrowRight className="w-4 h-4" />
+          {locale === "en" ? "View more" : "Voir plus"} <ArrowRight className="w-4 h-4" />
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">

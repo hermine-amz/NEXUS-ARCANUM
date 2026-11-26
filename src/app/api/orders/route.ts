@@ -135,17 +135,44 @@ export async function POST(req: Request) {
     let discountFcfa = 0;
     let couponId: string | null = null;
     if (parsed.data.couponCode) {
-      const { data: coupon } = await supabase
-        .from("coupons")
-        .select("*")
-        .eq("code", parsed.data.couponCode.trim().toUpperCase())
-        .maybeSingle();
+      const [{ data: coupon }, { data: linkSetting }] = await Promise.all([
+        supabase
+          .from("coupons")
+          .select("*")
+          .eq("code", parsed.data.couponCode.trim().toUpperCase())
+          .maybeSingle(),
+        supabase
+          .from("site_settings")
+          .select("value")
+          .eq("key", "coupon_product_links")
+          .maybeSingle(),
+      ]);
       if (coupon && coupon.is_active && subtotalFcfa >= coupon.min_order_fcfa) {
-        couponId = coupon.id;
-        discountFcfa =
-          coupon.discount_type === "PERCENTAGE"
-            ? Math.round((subtotalFcfa * coupon.discount_value) / 100)
-            : Math.min(subtotalFcfa, coupon.discount_value);
+        let linkedProductId: string | null = null;
+        if (linkSetting?.value) {
+          try {
+            linkedProductId = (JSON.parse(linkSetting.value) as Record<string, string>)[coupon.id] || null;
+          } catch {
+            linkedProductId = null;
+          }
+        }
+        let targetBase = subtotalFcfa;
+        let eligible = true;
+        if (linkedProductId) {
+          const item = orderItemsData.find((i) => i.product_id === linkedProductId);
+          if (item) {
+            targetBase = item.unit_price_fcfa;
+          } else {
+            eligible = false;
+          }
+        }
+        if (eligible) {
+          couponId = coupon.id;
+          discountFcfa =
+            coupon.discount_type === "PERCENTAGE"
+              ? Math.round((targetBase * coupon.discount_value) / 100)
+              : Math.min(targetBase, coupon.discount_value);
+        }
       }
     }
 

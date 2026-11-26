@@ -4,31 +4,63 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/ui/Logo";
-import { DEMO_CATEGORIES } from "@/lib/data/demo-catalog";
 import { useApp } from "@/components/providers/AppProvider";
+
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+function setBrowserCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 365) {
+  if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAgeSec}; SameSite=Lax${secure}`;
+}
 
 export function Footer() {
   const pathname = usePathname();
-  const { locale } = useApp();
+  const { locale, branding } = useApp();
+  const isEn = locale === "en";
   const [consentVisible, setConsentVisible] = useState(false);
+  const [footerCats, setFooterCats] = useState<
+    Array<{ slug: string; nameFr: string; nameEn: string }>
+  >([]);
 
   useEffect(() => {
     try {
-      if (!localStorage.getItem("nxa_cookie_consent")) {
+      const savedCookie = getCookie("nxa_cookie_consent");
+      const savedLs = localStorage.getItem("nxa_cookie_consent");
+      if (!savedCookie && !savedLs) {
         setConsentVisible(true);
       }
     } catch {
       // ignore
     }
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.categories)) {
+          setFooterCats(d.categories.slice(0, 6));
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  if (pathname?.startsWith("/admin")) {
+  const hideChrome =
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/connexion") ||
+    pathname?.startsWith("/inscription") ||
+    pathname?.startsWith("/pages/");
+
+  if (hideChrome) {
     return null;
   }
 
-  const acceptConsent = () => {
+  const handleConsent = (choice: "accepted" | "essential") => {
     try {
-      localStorage.setItem("nxa_cookie_consent", "accepted");
+      localStorage.setItem("nxa_cookie_consent", choice);
+      setBrowserCookie("nxa_cookie_consent", choice);
     } catch {
       // ignore
     }
@@ -42,9 +74,9 @@ export function Footer() {
           <div className="space-y-4">
             <Logo light />
             <p className="text-sm text-slate-400 leading-relaxed">
-              {locale === "en"
-                ? "NEXUSARCANUM SHOP is a generalist digital bookstore built for Benin, Africa and international readers. 100% digital, instant access."
-                : "NEXUSARCANUM SHOP est une grande librairie numérique généraliste destinée au Bénin, à l'Afrique et à l'international. 100 % numérique, accès instantané."}
+              {isEn
+                ? `${branding.siteName} is a generalist digital bookstore built for Benin, Africa and international readers. 100% digital, instant access.`
+                : `${branding.siteName} est une grande librairie numérique généraliste destinée au Bénin, à l'Afrique et à l'international. 100 % numérique, accès instantané.`}
             </p>
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="px-2.5 py-1 rounded bg-white/5 border border-white/10 text-gold-500">
@@ -61,32 +93,37 @@ export function Footer() {
 
           <div>
             <h3 className="text-white font-semibold mb-4 text-sm uppercase tracking-wider">
-              {locale === "en" ? "Explore" : "Découvrir"}
+              {isEn ? "Explore" : "Découvrir"}
             </h3>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/catalogue" className="hover:text-gold-500 transition">
-                  Catalogue complet
+                  {isEn ? "Full catalog" : "Catalogue complet"}
                 </Link>
               </li>
               <li>
                 <Link href="/catalogue?filter=new" className="hover:text-gold-500 transition">
-                  Nouveautés
+                  {isEn ? "New arrivals" : "Nouveautés"}
                 </Link>
               </li>
               <li>
                 <Link href="/catalogue?filter=bestsellers" className="hover:text-gold-500 transition">
-                  Meilleures ventes
+                  {isEn ? "Bestsellers" : "Meilleures ventes"}
+                </Link>
+              </li>
+              <li>
+                <Link href="/catalogue?filter=promo" className="hover:text-gold-500 transition">
+                  {isEn ? "Current deals" : "Promotions"}
                 </Link>
               </li>
               <li>
                 <Link href="/catalogue?filter=free" className="hover:text-gold-500 transition">
-                  Livres & extraits gratuits
+                  {isEn ? "Free books" : "Livres gratuits"}
                 </Link>
               </li>
               <li>
                 <Link href="/compte/bibliotheque" className="hover:text-gold-500 transition">
-                  Ma Bibliothèque numérique
+                  {isEn ? "My Digital Library" : "Ma Bibliothèque numérique"}
                 </Link>
               </li>
             </ul>
@@ -94,16 +131,16 @@ export function Footer() {
 
           <div>
             <h3 className="text-white font-semibold mb-4 text-sm uppercase tracking-wider">
-              {locale === "en" ? "Categories" : "Catégories phares"}
+              {isEn ? "Featured Categories" : "Catégories phares"}
             </h3>
             <ul className="space-y-2 text-sm">
-              {DEMO_CATEGORIES.slice(0, 6).map((cat) => (
+              {footerCats.map((cat) => (
                 <li key={cat.slug}>
                   <Link
                     href={`/categories/${cat.slug}`}
                     className="hover:text-gold-500 transition"
                   >
-                    {locale === "en" ? cat.nameEn : cat.nameFr}
+                    {isEn ? cat.nameEn : cat.nameFr}
                   </Link>
                 </li>
               ))}
@@ -112,7 +149,7 @@ export function Footer() {
 
           <div>
             <h3 className="text-white font-semibold mb-4 text-sm uppercase tracking-wider">
-              {locale === "en" ? "Legal & Support" : "Informations légales"}
+              {isEn ? "Legal & Support" : "Informations légales"}
             </h3>
             <ul className="space-y-2 text-sm">
               <li>
@@ -120,12 +157,12 @@ export function Footer() {
                   href="/pages/conditions-generales"
                   className="hover:text-gold-500 transition"
                 >
-                  Conditions générales (CGU/CGV)
+                  {isEn ? "Terms of Service (ToS)" : "Conditions générales (CGU/CGV)"}
                 </Link>
               </li>
               <li>
                 <Link href="/pages/confidentialite" className="hover:text-gold-500 transition">
-                  Politique de confidentialité
+                  {isEn ? "Privacy Policy" : "Politique de confidentialité"}
                 </Link>
               </li>
               <li>
@@ -133,7 +170,7 @@ export function Footer() {
                   href="/pages/droits-auteur-licences"
                   className="hover:text-gold-500 transition"
                 >
-                  Droits d&apos;auteur & licences numériques
+                  {isEn ? "Copyright & Digital Licenses" : "Droits d'auteur & licences numériques"}
                 </Link>
               </li>
               <li>
@@ -141,12 +178,12 @@ export function Footer() {
                   href="/pages/politique-remboursement"
                   className="hover:text-gold-500 transition"
                 >
-                  Politique de remboursement
+                  {isEn ? "Refund Policy" : "Politique de remboursement"}
                 </Link>
               </li>
               <li>
                 <Link href="/admin" className="text-gold-500 hover:underline">
-                  Espace Administration
+                  {isEn ? "Admin Dashboard" : "Espace Administration"}
                 </Link>
               </li>
             </ul>
@@ -154,26 +191,41 @@ export function Footer() {
         </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <p>© {new Date().getFullYear()} NEXUSARCANUM SHOP — Plateforme indépendante 100 % numérique.</p>
-          <p>Marché : Bénin • Afrique • International</p>
+          <p>
+            © {new Date().getFullYear()} {branding.siteName} —{" "}
+            {isEn
+              ? "Independent 100% digital platform."
+              : "Plateforme indépendante 100 % numérique."}
+          </p>
+          <p>{isEn ? "Market: Benin • Africa • Worldwide" : "Marché : Bénin • Afrique • International"}</p>
         </div>
       </footer>
 
       {consentVisible && (
-        <div className="fixed bottom-16 md:bottom-4 left-4 right-4 md:left-auto md:max-w-md z-50 bg-navy-900 text-white border border-gold-500/40 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center gap-3 text-xs">
-          <p className="text-slate-200 leading-relaxed">
-            Ce site utilise des cookies essentiels pour votre panier, votre session et la langue sélectionnée.
+        <div className="fixed bottom-16 md:bottom-4 left-4 right-4 md:left-auto md:max-w-lg z-50 bg-navy-900/95 backdrop-blur-xl text-white border border-gold-500/40 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center gap-3 text-xs">
+          <p className="text-slate-200 leading-relaxed flex-1">
+            {isEn
+              ? "This website uses essential cookies for your cart, session security and language preference."
+              : "Ce site utilise des cookies essentiels pour votre panier, votre session sécurisée et la langue sélectionnée."}
           </p>
-          <button
-            type="button"
-            onClick={acceptConsent}
-            className="shrink-0 px-4 py-2 rounded-lg bg-gold-500 text-navy-950 font-semibold hover:bg-gold-600 transition"
-          >
-            Accepter
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleConsent("essential")}
+              className="px-3 py-2 rounded-lg border border-white/20 text-slate-200 hover:bg-white/10 font-semibold transition cursor-pointer"
+            >
+              {isEn ? "Essential only" : "Essentiels"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleConsent("accepted")}
+              className="px-4 py-2 rounded-lg bg-gold-500 text-navy-950 font-bold hover:bg-gold-600 transition cursor-pointer"
+            >
+              {isEn ? "Accept" : "Accepter"}
+            </button>
+          </div>
         </div>
       )}
     </>
   );
 }
-

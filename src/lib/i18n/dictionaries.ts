@@ -23,10 +23,10 @@ export const dictionaries = {
       subtitle:
         "Des milliers d'ouvrages numériques, guides pratiques, formations et ressources d'excellence pour le Bénin, l'Afrique et le monde entier.",
       exploreCta: "Explorer le catalogue",
-      freeCta: "Extraits gratuits",
+      freeCta: "Livres gratuits",
     },
     sections: {
-      categoriesTitle: "16 Univers de Connaissance",
+      categoriesTitle: "Nos Univers de Connaissance",
       categoriesSubtitle: "Explorez nos grandes catégories thématiques et leurs sous-collections.",
       newArrivals: "Nouveautés",
       bestsellers: "Meilleures ventes",
@@ -93,10 +93,10 @@ export const dictionaries = {
       subtitle:
         "Digital books, practical guides, courses and curated resources built for Benin, Africa and international readers.",
       exploreCta: "Explore Catalog",
-      freeCta: "Free Extracts",
+      freeCta: "Free Books",
     },
     sections: {
-      categoriesTitle: "16 Knowledge Universes",
+      categoriesTitle: "Our Knowledge Universes",
       categoriesSubtitle: "Browse our main categories and specialized sub-collections.",
       newArrivals: "New Arrivals",
       bestsellers: "Bestsellers",

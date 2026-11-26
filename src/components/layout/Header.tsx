@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -25,9 +25,29 @@ export function Header() {
   const [query, setQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [navCategories, setNavCategories] = useState(
+    DEMO_CATEGORIES.map((c) => ({ slug: c.slug, nameFr: c.nameFr, nameEn: c.nameEn }))
+  );
   const router = useRouter();
 
-  if (pathname?.startsWith("/admin")) {
+  useEffect(() => {
+    fetch("/api/categories")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.categories) && d.categories.length > 0) {
+          setNavCategories(d.categories);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const hideChrome =
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/connexion") ||
+    pathname?.startsWith("/inscription") ||
+    pathname?.startsWith("/pages/");
+
+  if (hideChrome) {
     return null;
   }
 
@@ -153,11 +173,13 @@ export function Header() {
                 className="inline-flex items-center gap-1.5 hover:text-gold-500 transition font-medium py-2"
               >
                 <LayoutGrid className="w-4 h-4 text-gold-500" />
-                <span>{t.nav.categories} (16)</span>
+                <span>
+                  {t.nav.categories} ({navCategories.length})
+                </span>
               </button>
               {categoriesOpen && (
-                <div className="absolute left-0 top-full w-[680px] bg-white text-slate-900 rounded-b-2xl shadow-2xl border border-slate-200 p-5 grid grid-cols-2 gap-2 z-50">
-                  {DEMO_CATEGORIES.map((cat) => (
+                <div className="absolute left-0 top-full w-[680px] bg-white text-slate-900 rounded-b-2xl shadow-2xl border border-slate-200 p-5 grid grid-cols-2 gap-2 z-50 max-h-[70vh] overflow-y-auto">
+                  {navCategories.map((cat) => (
                     <Link
                       key={cat.slug}
                       href={`/categories/${cat.slug}`}
@@ -240,10 +262,10 @@ export function Header() {
             </div>
             <div className="pt-2 border-t border-white/10">
               <p className="text-xs uppercase tracking-wider text-gold-500 mb-2">
-                16 Catégories
+                Catégories ({navCategories.length})
               </p>
               <div className="grid grid-cols-1 gap-1 max-h-56 overflow-y-auto text-sm">
-                {DEMO_CATEGORIES.map((cat) => (
+                {navCategories.map((cat) => (
                   <Link
                     key={cat.slug}
                     href={`/categories/${cat.slug}`}

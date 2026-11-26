@@ -203,7 +203,10 @@ export async function serveProtectedAsset(params: {
     try {
       const pdfDoc = await PDFDocument.load(fileBuffer);
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const stamp = `Licence ${entitlement.license_key} - ${user?.email || ""}`;
+      const purchaseDate = new Date(entitlement.granted_at || Date.now()).toLocaleDateString(
+        "fr-FR"
+      );
+      const stamp = `${user?.email || "client"} - ${purchaseDate}`;
       for (const page of pdfDoc.getPages()) {
         page.drawText(stamp, {
           x: 40,

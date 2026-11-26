@@ -46,20 +46,26 @@ export function encryptSecrets(payload: Record<string, string | undefined>): str
 
 /**
  * Déchiffre les secrets d'un agrégateur stockés en base.
+ * Retourne un objet vide si le chiffrement est absent ou issu d'une ancienne clé,
+ * afin de ne jamais bloquer l'affichage des agrégateurs dans l'administration.
  */
 export function decryptSecrets(cipherText: string | null | undefined): Record<string, string> {
   if (!cipherText) return {};
   const parts = cipherText.split(":");
   if (parts.length !== 3) return {};
-  const [ivHex, tagHex, dataHex] = parts;
-  const key = getEncryptionKey();
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, "hex"));
-  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(dataHex, "hex")),
-    decipher.final(),
-  ]);
-  return JSON.parse(decrypted.toString("utf8")) as Record<string, string>;
+  try {
+    const [ivHex, tagHex, dataHex] = parts;
+    const key = getEncryptionKey();
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, "hex"));
+    decipher.setAuthTag(Buffer.from(tagHex, "hex"));
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(dataHex, "hex")),
+      decipher.final(),
+    ]);
+    return JSON.parse(decrypted.toString("utf8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
 }
 
 /**

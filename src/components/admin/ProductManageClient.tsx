@@ -19,11 +19,13 @@ import {
   Shield,
   Sparkles,
   Star,
+  Tag,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useApp } from "@/components/providers/AppProvider";
 import { formatFcfa } from "@/components/catalog/ProductCard";
+import { RichTextEditor } from "@/components/ui/RichTextEditor";
 
 interface ProductFull {
   id: string;
@@ -122,14 +124,69 @@ function ToggleSwitch({
 }
 
 export function ProductManageClient({ productId }: { productId: string }) {
-  const { user, showToast } = useApp();
+  const { user, authLoaded, showToast, confirmAction } = useApp();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [bookCoupons, setBookCoupons] = useState<
+    Array<{ id: string; code: string; discountType: string; discountValue: number; isActive: boolean }>
+  >([]);
+  const [bookCouponCode, setBookCouponCode] = useState("");
+  const [bookCouponType, setBookCouponType] = useState<"PERCENTAGE" | "FIXED_FCFA">("PERCENTAGE");
+  const [bookCouponVal, setBookCouponVal] = useState("15");
+
+  const loadBookCoupons = useCallback(async () => {
+    const res = await fetch(`/api/admin/coupons?productId=${encodeURIComponent(productId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      setBookCoupons(data.coupons || []);
+    }
+  }, [productId]);
+
+  useEffect(() => {
+    loadBookCoupons();
+  }, [loadBookCoupons]);
+
+  const handleCreateBookCoupon = async () => {
+    if (!bookCouponCode.trim()) {
+      showToast("Veuillez saisir un code promo.", "warning");
+      return;
+    }
+    const res = await fetch("/api/admin/coupons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: bookCouponCode.trim().toUpperCase(),
+        discountType: bookCouponType,
+        discountValue: Number(bookCouponVal) || 10,
+        productId,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || "Impossible de créer ce code promo.", "error");
+      return;
+    }
+    showToast(`Code promo ${bookCouponCode.trim().toUpperCase()} créé pour ce livre !`, "success");
+    setBookCouponCode("");
+    loadBookCoupons();
+  };
+
+  const handleDeleteBookCoupon = async (id: string, code: string) => {
+    const ok = await confirmAction({
+      title: `Supprimer le code « ${code} » ?`,
+      message: "Ce code promo ne sera plus utilisable pour ce livre.",
+      confirmLabel: "Supprimer",
+      variant: "danger",
+    });
+    if (!ok) return;
+    await fetch(`/api/admin/coupons?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    showToast("Code promo supprimé.", "success");
+    loadBookCoupons();
+  };
   const [activeTab, setActiveTab] = useState<StudioTab>("infos");
-  const [langTab, setLangTab] = useState<"fr" | "en">("fr");
 
   const [form, setForm] = useState<ProductFull | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
@@ -235,17 +292,37 @@ export function ProductManageClient({ productId }: { productId: string }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm("Supprimer définitivement ce produit ?")) return;
+    const ok = await confirmAction({
+      title: "Supprimer cet ouvrage définitivement ?",
+      message:
+        "Cette action est irréversible. Le livre et ses fichiers numériques associés seront retirés du catalogue.",
+      confirmLabel: "Supprimer définitivement",
+      variant: "danger",
+    });
+    if (!ok) return;
     const res = await fetch(`/api/admin/products/${productId}`, { method: "DELETE" });
     if (res.ok) {
-      showToast("Produit supprimé.");
-      router.push("/admin");
+      showToast("Produit supprimé définitivement.", "success");
+      router.push("/admin?tab=products");
+    } else {
+      showToast("Impossible de supprimer ce produit.", "error");
     }
   };
 
+  if (!authLoaded) {
+    return (
+      <div className="min-h-screen bg-[#E9EEF5] flex items-center justify-center p-4">
+        <div className="bg-white/90 backdrop-blur rounded-2xl border border-slate-200 px-6 py-4 shadow-md flex items-center gap-3 text-sm font-medium text-slate-600">
+          <span className="w-2.5 h-2.5 rounded-full bg-gold-500 animate-pulse" />
+          <span>Chargement de la fiche produit...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || !isAdmin) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#E9EEF5] flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-4 max-w-md w-full">
           <Lock className="w-10 h-10 text-amber-600 mx-auto" />
           <p className="font-bold text-slate-900">Accès administrateur requis</p>
@@ -262,7 +339,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
 
   if (loading || !form) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA] flex flex-col items-center justify-center gap-3 text-sm text-slate-500">
+      <div className="min-h-screen bg-[#E9EEF5] flex flex-col items-center justify-center gap-3 text-sm text-slate-500">
         {error ? (
           <>
             <p className="text-rose-600 font-semibold">{error}</p>
@@ -298,13 +375,13 @@ export function ProductManageClient({ productId }: { productId: string }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-slate-900 pb-16">
+    <div className="min-h-screen bg-[#E9EEF5] text-slate-900 pb-16">
       {/* Top sticky Studio Header */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 sm:px-8 py-3.5">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <Link
-              href="/admin"
+              href="/admin?tab=products"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
@@ -352,10 +429,10 @@ export function ProductManageClient({ productId }: { productId: string }) {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
-        {/* Horizontal Chariow-style Stepped Pill Navigation */}
+        {/* Horizontal Chariow-style Stepped Pill Navigation (fixe sous le header) */}
         <nav
           aria-label="Sections produit"
-          className="bg-white rounded-2xl border border-slate-200/80 p-1.5 shadow-2xs grid grid-cols-2 sm:grid-cols-4 gap-1.5"
+          className="sticky top-[65px] z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-200/80 p-1.5 shadow-sm grid grid-cols-2 sm:grid-cols-4 gap-1.5"
         >
           {tabs.map((t) => {
             const Icon = t.icon;
@@ -391,7 +468,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
           <form onSubmit={handleSave} className="lg:col-span-8 space-y-5">
             {/* TAB 1: INFORMATIONS */}
             {activeTab === "infos" && (
-              <section className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-5">
+              <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md shadow-slate-900/5 space-y-5">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <h2 className="font-bold text-base text-slate-900">
@@ -401,145 +478,69 @@ export function ProductManageClient({ productId }: { productId: string }) {
                       Soignez le titre et la présentation pour convaincre vos lecteurs.
                     </p>
                   </div>
-                  <div className="inline-flex rounded-xl bg-slate-100 p-1 text-[11px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setLangTab("fr")}
-                      className={`px-3 py-1 rounded-lg cursor-pointer ${
-                        langTab === "fr" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
-                      }`}
-                    >
-                      FR
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLangTab("en")}
-                      className={`px-3 py-1 rounded-lg cursor-pointer ${
-                        langTab === "en" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
-                      }`}
-                    >
-                      EN
-                    </button>
-                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Traduction EN automatique ✓
+                  </span>
                 </div>
 
-                {langTab === "fr" ? (
-                  <div className="space-y-4 text-xs">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Titre de l&apos;ouvrage *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={form.titleFr}
-                        onChange={(e) => setForm({ ...form, titleFr: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-semibold focus:border-navy-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Sous-titre</label>
-                      <input
-                        type="text"
-                        value={form.subtitleFr}
-                        onChange={(e) => setForm({ ...form, subtitleFr: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Accroche commerciale courte *
-                      </label>
-                      <textarea
-                        rows={2}
-                        required
-                        value={form.shortDescFr}
-                        onChange={(e) => setForm({ ...form, shortDescFr: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Présentation détaillée *
-                      </label>
-                      <textarea
-                        rows={4}
-                        required
-                        value={form.longDescFr}
-                        onChange={(e) => setForm({ ...form, longDescFr: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Sommaire (1 chapitre par ligne)
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={form.summaryFr}
-                        onChange={(e) => setForm({ ...form, summaryFr: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-mono"
-                      />
-                    </div>
+                <div className="space-y-4 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">
+                      Titre de l&apos;ouvrage *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={form.titleFr}
+                      onChange={(e) => setForm({ ...form, titleFr: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-semibold focus:border-navy-900"
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-4 text-xs">
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Title (EN) *</label>
-                      <input
-                        type="text"
-                        required
-                        value={form.titleEn}
-                        onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">Subtitle (EN)</label>
-                      <input
-                        type="text"
-                        value={form.subtitleEn}
-                        onChange={(e) => setForm({ ...form, subtitleEn: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Short description (EN) *
-                      </label>
-                      <textarea
-                        rows={2}
-                        required
-                        value={form.shortDescEn}
-                        onChange={(e) => setForm({ ...form, shortDescEn: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Detailed overview (EN) *
-                      </label>
-                      <textarea
-                        rows={4}
-                        required
-                        value={form.longDescEn}
-                        onChange={(e) => setForm({ ...form, longDescEn: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-600 mb-1">
-                        Table of contents (EN)
-                      </label>
-                      <textarea
-                        rows={4}
-                        value={form.summaryEn}
-                        onChange={(e) => setForm({ ...form, summaryEn: e.target.value })}
-                        className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-mono"
-                      />
-                    </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">Sous-titre</label>
+                    <input
+                      type="text"
+                      value={form.subtitleFr}
+                      onChange={(e) => setForm({ ...form, subtitleFr: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
+                    />
                   </div>
-                )}
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">
+                      Accroche commerciale courte *
+                    </label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={form.shortDescFr}
+                      onChange={(e) => setForm({ ...form, shortDescFr: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">
+                      Présentation détaillée * (Éditeur enrichi)
+                    </label>
+                    <RichTextEditor
+                      value={form.longDescFr}
+                      onChange={(html) => setForm({ ...form, longDescFr: html })}
+                      placeholder="Rédigez une présentation complète (gras, couleurs, listes, liens, images...)"
+                      minHeight="200px"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-600 mb-1">
+                      Sommaire (1 chapitre par ligne)
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={form.summaryFr}
+                      onChange={(e) => setForm({ ...form, summaryFr: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-mono"
+                    />
+                  </div>
+                </div>
 
                 <hr className="border-slate-100" />
 
@@ -623,7 +624,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
 
             {/* TAB 2: TARIFICATION */}
             {activeTab === "pricing" && (
-              <section className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-6">
+              <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md shadow-slate-900/5 space-y-6">
                 <div>
                   <h2 className="font-bold text-base text-slate-900">
                     Tarification & Mode commercial
@@ -675,6 +676,76 @@ export function ProductManageClient({ productId }: { productId: string }) {
                   </div>
                 </div>
 
+                {/* Codes promo spécifiques à ce livre */}
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Tag className="w-4 h-4 text-amber-700" />
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900">
+                        Codes promo dédiés à ce livre ({bookCoupons.length})
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Créez un code promotionnel valable uniquement sur cet ouvrage.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
+                    <input
+                      type="text"
+                      value={bookCouponCode}
+                      onChange={(e) => setBookCouponCode(e.target.value)}
+                      placeholder="EX: LIVRE20"
+                      className="sm:col-span-5 rounded-xl border border-slate-200 bg-white px-3 py-2 uppercase font-bold"
+                    />
+                    <select
+                      value={bookCouponType}
+                      onChange={(e) => setBookCouponType(e.target.value as typeof bookCouponType)}
+                      className="sm:col-span-3 rounded-xl border border-slate-200 bg-white px-2.5 py-2"
+                    >
+                      <option value="PERCENTAGE">%</option>
+                      <option value="FIXED_FCFA">FCFA</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      value={bookCouponVal}
+                      onChange={(e) => setBookCouponVal(e.target.value)}
+                      className="sm:col-span-2 rounded-xl border border-slate-200 bg-white px-3 py-2 font-bold"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateBookCoupon}
+                      className="sm:col-span-2 rounded-xl bg-navy-950 text-gold-500 font-bold px-3 py-2 hover:bg-navy-900 cursor-pointer"
+                    >
+                      Ajouter
+                    </button>
+                  </div>
+                  {bookCoupons.length > 0 && (
+                    <div className="divide-y divide-slate-200/70 pt-1 text-xs">
+                      {bookCoupons.map((cp) => (
+                        <div key={cp.id} className="py-2 flex items-center justify-between gap-2">
+                          <div>
+                            <span className="font-mono font-bold text-slate-900">{cp.code}</span>
+                            <span className="ml-2 text-emerald-700 font-semibold">
+                              {cp.discountType === "PERCENTAGE"
+                                ? `-${cp.discountValue}%`
+                                : `-${formatFcfa(cp.discountValue)}`}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBookCoupon(cp.id, cp.code)}
+                            className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                            title="Supprimer ce code promo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="divide-y divide-slate-100 border-t border-slate-100">
                   <ToggleSwitch
                     checked={form.isFree}
@@ -698,7 +769,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
 
             {/* TAB 3: FICHIERS & MÉDIA */}
             {activeTab === "files" && (
-              <section className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-6">
+              <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md shadow-slate-900/5 space-y-6">
                 <div>
                   <h2 className="font-bold text-base text-slate-900">
                     Couverture & Fichiers à livrer
@@ -734,35 +805,20 @@ export function ProductManageClient({ productId }: { productId: string }) {
                   />
                 </label>
 
-                {/* Dropzones 2 & 3: Extrait + Fichier complet */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label className="rounded-2xl border-2 border-dashed border-slate-200 hover:border-emerald-300 bg-slate-50/50 p-5 flex flex-col items-center text-center gap-2 cursor-pointer transition">
-                    <Upload className="w-5 h-5 text-emerald-600" />
-                    <span className="text-xs font-bold text-slate-900">
-                      {uploading === "FREE_EXTRACT"
-                        ? "Envoi..."
-                        : "Extrait gratuit (PDF 3–5 pages)"}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      Téléchargeable librement par les visiteurs
-                    </span>
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      className="hidden"
-                      onChange={(e) => handleUpload("FREE_EXTRACT", e.target.files?.[0])}
-                    />
-                  </label>
-
-                  <label className="rounded-2xl border-2 border-dashed border-slate-200 hover:border-navy-900 bg-slate-50/50 p-5 flex flex-col items-center text-center gap-2 cursor-pointer transition">
-                    <Lock className="w-5 h-5 text-navy-950" />
+                {/* Dropzone 2: Fichier complet (aperçu 4 pages filigrané généré automatiquement) */}
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-[#FEFCE8] border border-amber-200 px-4 py-3 text-xs text-amber-950">
+                    <strong>Aperçu automatique des 4 premières pages :</strong> plus besoin de préparer un extrait séparé. Les visiteurs peuvent feuilleter les 4 premières pages du PDF complet avec un filigrane de protection automatique.
+                  </div>
+                  <label className="rounded-2xl border-2 border-dashed border-slate-200 hover:border-navy-900 bg-slate-50/50 p-6 flex flex-col items-center text-center gap-2 cursor-pointer transition">
+                    <Lock className="w-6 h-6 text-navy-950" />
                     <span className="text-xs font-bold text-slate-900">
                       {uploading === "FULL_PRODUCT"
                         ? "Envoi sécurisé..."
-                        : "Fichier complet payant"}
+                        : "Téléverser le fichier complet du livre (PDF, EPUB, MP3, ZIP)"}
                     </span>
                     <span className="text-[11px] text-slate-400">
-                      PDF, EPUB, MP3, ZIP → Bucket privé protégé
+                      Stocké dans votre coffre privé • Aperçu 4 pages filigrané généré automatiquement
                     </span>
                     <input
                       type="file"
@@ -827,7 +883,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
                     checked={form.watermarkEnabled}
                     onChange={(v) => setForm({ ...form, watermarkEnabled: v })}
                     label="Filigrane PDF automatique"
-                    description="Inscrit l'email du client et sa clé de licence sur chaque page du PDF."
+                    description="Inscrit l'email du client et sa date d'achat sur chaque page du PDF."
                   />
                 </div>
               </section>
@@ -835,7 +891,7 @@ export function ProductManageClient({ productId }: { productId: string }) {
 
             {/* TAB 4: VISIBILITÉ & OPTIONS */}
             {activeTab === "settings" && (
-              <section className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-5">
+              <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md shadow-slate-900/5 space-y-5">
                 <div>
                   <h2 className="font-bold text-base text-slate-900">
                     Visibilité, Mise en avant & Actions
@@ -941,8 +997,8 @@ export function ProductManageClient({ productId }: { productId: string }) {
           </form>
 
           {/* RIGHT: Live Chariow-style Storefront Card Preview (4 cols) */}
-          <aside className="lg:col-span-4 lg:sticky lg:top-20 space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+          <aside className="lg:col-span-4 lg:sticky lg:top-[136px] space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
                   <Sparkles className="w-3.5 h-3.5 text-amber-600" />

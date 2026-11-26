@@ -12,22 +12,38 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Download,
   ExternalLink,
   FileSpreadsheet,
+  FileText,
+  FolderTree,
   LayoutDashboard,
   Lock,
   LogOut,
   Menu,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
+  Power,
+  Receipt,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Trash2,
+  TrendingUp,
   Upload,
   Users,
   X,
 } from "lucide-react";
 import { useApp } from "@/components/providers/AppProvider";
 import { formatFcfa } from "@/components/catalog/ProductCard";
+import {
+  CategoriesCouponsPanel,
+  CmsBannersPanel,
+  CommunityPanel,
+  SecurityAuditPanel,
+} from "./AdminExtrasPanels";
 
 interface GatewayAdminRow {
   id: string;
@@ -77,9 +93,15 @@ interface AdminOrderRow {
   reference: string;
   customerName: string;
   customerEmail: string;
+  customerPhone?: string;
+  subtotalFcfa?: number;
+  discountFcfa?: number;
   totalFcfa: number;
   status: string;
   isDemoOrder: boolean;
+  gatewayCode?: string | null;
+  paymentStatus?: string | null;
+  items?: Array<{ id: string; titleSnapshot: string; unitPriceFcfa: number }>;
   createdAt: string;
 }
 
@@ -91,14 +113,31 @@ interface AdminClientRow {
   createdAt: string;
 }
 
-interface AdminTask {
-  id: string;
-  text: string;
-  priority: "Critique" | "Important" | "Normal";
-  done: boolean;
-}
+type AdminTab =
+  | "cockpit"
+  | "products"
+  | "orders"
+  | "payments"
+  | "import"
+  | "categories"
+  | "cms"
+  | "community"
+  | "security";
 
-type AdminTab = "cockpit" | "products" | "orders" | "payments" | "import";
+const VALID_ADMIN_TABS: AdminTab[] = [
+  "cockpit",
+  "products",
+  "orders",
+  "payments",
+  "import",
+  "categories",
+  "cms",
+  "community",
+  "security",
+];
+
+const ADMIN_TAB_STORAGE_KEY = "nxa_admin_tab";
+const ADMIN_SIDEBAR_STORAGE_KEY = "nxa_admin_sidebar_collapsed";
 
 export function AdminClient({
   stats,
@@ -114,16 +153,62 @@ export function AdminClient({
     pendingPayments: number;
   };
 }) {
-  const { user, logout, showToast } = useApp();
+  const { user, authLoaded, branding, logout, showToast, confirmAction } = useApp();
   const router = useRouter();
 
-  const [tab, setTab] = useState<AdminTab>("cockpit");
+  const [tab, setTabState] = useState<AdminTab>("cockpit");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<AdminOrderRow | null>(null);
 
-  // Tâches quotidiennes (localStorage)
-  const [tasks, setTasks] = useState<AdminTask[]>([]);
-  const [taskText, setTaskText] = useState("");
-  const [taskPriority, setTaskPriority] = useState<AdminTask["priority"]>("Critique");
+  const setTab = (next: AdminTab) => {
+    setTabState(next);
+    try {
+      sessionStorage.setItem(ADMIN_TAB_STORAGE_KEY, next);
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", next);
+      window.history.replaceState(null, "", url.pathname + url.search);
+    } catch {
+      // ignore
+    }
+  };
+
+  const setSidebarCollapsed = (next: boolean | ((prev: boolean) => boolean)) => {
+    setSidebarCollapsedState((prev) => {
+      const resolved = typeof next === "function" ? next(prev) : next;
+      try {
+        localStorage.setItem(ADMIN_SIDEBAR_STORAGE_KEY, resolved ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return resolved;
+    });
+  };
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlTab = params.get("tab") as AdminTab | null;
+      const savedTab = sessionStorage.getItem(ADMIN_TAB_STORAGE_KEY) as AdminTab | null;
+      const initial =
+        urlTab && VALID_ADMIN_TABS.includes(urlTab)
+          ? urlTab
+          : savedTab && VALID_ADMIN_TABS.includes(savedTab)
+          ? savedTab
+          : "cockpit";
+      setTabState(initial);
+      if (params.get("tab") !== initial) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", initial);
+        window.history.replaceState(null, "", url.pathname + url.search);
+      }
+      if (localStorage.getItem(ADMIN_SIDEBAR_STORAGE_KEY) === "1") {
+        setSidebarCollapsedState(true);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Données métier
   const [gateways, setGateways] = useState<GatewayAdminRow[]>([]);
@@ -133,8 +218,10 @@ export function AdminClient({
   const [orders, setOrders] = useState<AdminOrderRow[]>([]);
   const [clients, setClients] = useState<AdminClientRow[]>([]);
 
-  // Filtres & Data Table catalogue
+  // Filtres & Data Table catalogue / commandes / clients
   const [prodQuery, setProdQuery] = useState("");
+  const [orderQuery, setOrderQuery] = useState("");
+  const [clientQuery, setClientQuery] = useState("");
   const [prodFilter, setProdFilter] = useState<"all" | "demo" | "commercial" | "archived">("all");
   const [prodSort, setProdSort] = useState<{
     field: "title" | "category" | "price";
@@ -157,8 +244,20 @@ export function AdminClient({
     isDemo: false,
   });
 
-  // Config passerelle
+  // Config & ajout passerelle
   const [editingGw, setEditingGw] = useState<GatewayAdminRow | null>(null);
+  const [newGwOpen, setNewGwOpen] = useState(false);
+  const [newGwSaving, setNewGwSaving] = useState(false);
+  const [newGwForm, setNewGwForm] = useState({
+    name: "",
+    code: "",
+    description: "",
+    apiBaseUrl: "",
+    feePercent: "2.5",
+    environment: "TEST" as "TEST" | "PRODUCTION",
+    apiKey: "",
+    webhookSecret: "",
+  });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [webhookSecretInput, setWebhookSecretInput] = useState("");
   const [maketouDocIdInput, setMaketouDocIdInput] = useState("");
@@ -173,26 +272,6 @@ export function AdminClient({
 
   const isAdmin =
     user?.roles?.some((r) => r === "SUPER_ADMIN" || r === "ADMIN" || r === "EDITOR") ?? false;
-
-  useEffect(() => {
-    try {
-      const savedTasks = localStorage.getItem("nxa_admin_tasks");
-      if (savedTasks) {
-        setTasks(JSON.parse(savedTasks));
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const persistTasks = (next: AdminTask[]) => {
-    setTasks(next);
-    try {
-      localStorage.setItem("nxa_admin_tasks", JSON.stringify(next));
-    } catch {
-      // ignore
-    }
-  };
 
   const loadGateways = async () => {
     const res = await fetch("/api/admin/gateways");
@@ -262,6 +341,24 @@ export function AdminClient({
     return filteredProducts.slice(start, start + prodPageSize);
   }, [filteredProducts, safeProdPage, prodPageSize]);
 
+  const filteredOrders = useMemo(() => {
+    const q = orderQuery.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter((o) =>
+      `${o.reference} ${o.customerName} ${o.customerEmail} ${o.gatewayCode || ""} ${o.status}`
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [orders, orderQuery]);
+
+  const filteredClients = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) =>
+      `${c.name} ${c.email} ${c.country}`.toLowerCase().includes(q)
+    );
+  }, [clients, clientQuery]);
+
   const toggleSort = (field: "title" | "category" | "price") => {
     setProdSort((prev) =>
       prev.field === field
@@ -273,17 +370,6 @@ export function AdminClient({
 
   const unconfiguredActiveGateways = gateways.filter((g) => g.isActive && !g.hasApiKey);
 
-  const handleAddTask = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!taskText.trim() || tasks.length >= 10) return;
-    const next: AdminTask[] = [
-      { id: String(Date.now()), text: taskText.trim(), priority: taskPriority, done: false },
-      ...tasks,
-    ];
-    persistTasks(next);
-    setTaskText("");
-  };
-
   const handleRoutingModeChange = async (mode: "MODE_A" | "MODE_B" | "MODE_C") => {
     setRoutingMode(mode);
     const res = await fetch("/api/admin/gateways", {
@@ -291,13 +377,30 @@ export function AdminClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "SET_ROUTING_MODE", routingMode: mode }),
     });
-    if (res.ok) showToast(`Mode de routage basculé vers ${mode}`);
+    if (res.ok) {
+      showToast(`Mode de routage basculé vers ${mode}.`, "success");
+    } else {
+      showToast("Impossible de modifier le mode de routage.", "error");
+    }
   };
 
   const handleGatewayAction = async (
     gatewayId: string,
-    action: "SET_DEFAULT" | "TEST_CONNECTION"
+    action: "SET_DEFAULT" | "TEST_CONNECTION" | "TOGGLE_ACTIVE"
   ) => {
+    if (action === "TOGGLE_ACTIVE") {
+      const target = gateways.find((g) => g.id === gatewayId);
+      if (target?.isActive) {
+        const ok = await confirmAction({
+          title: `Désactiver ${target.name} ?`,
+          message: `Les clients ne pourront plus régler leurs achats via ${target.name} tant qu'il reste désactivé.`,
+          confirmLabel: "Désactiver",
+          variant: "warning",
+        });
+        if (!ok) return;
+      }
+    }
+
     const res = await fetch("/api/admin/gateways", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -305,10 +408,77 @@ export function AdminClient({
     });
     const data = await res.json();
     if (action === "TEST_CONNECTION") {
-      showToast(data.message || (data.ok ? "Connexion OK" : "Erreur connexion"));
+      showToast(
+        data.message || (data.ok ? "Connexion réussie." : "Échec de la connexion."),
+        data.ok ? "success" : "error"
+      );
+    } else if (action === "TOGGLE_ACTIVE" && res.ok) {
+      showToast(
+        data.isActive ? "Agrégateur activé sur la boutique." : "Agrégateur désactivé.",
+        data.isActive ? "success" : "info"
+      );
     } else if (res.ok) {
-      showToast("Agrégateur défini par défaut.");
+      showToast("Agrégateur défini par défaut.", "success");
+    } else {
+      showToast(data.error || "Action impossible sur cet agrégateur.", "error");
     }
+    loadGateways();
+  };
+
+  const handleCreateGateway = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setNewGwSaving(true);
+    try {
+      const res = await fetch("/api/admin/gateways", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newGwForm,
+          feePercent: Number(newGwForm.feePercent) || 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Erreur lors de la création de l'agrégateur.", "error");
+        return;
+      }
+      showToast("Nouvel agrégateur ajouté avec succès !", "success");
+      setNewGwOpen(false);
+      setNewGwForm({
+        name: "",
+        code: "",
+        description: "",
+        apiBaseUrl: "",
+        feePercent: "2.5",
+        environment: "TEST",
+        apiKey: "",
+        webhookSecret: "",
+      });
+      loadGateways();
+    } finally {
+      setNewGwSaving(false);
+    }
+  };
+
+  const handleDeleteGateway = async (gw: GatewayAdminRow) => {
+    const ok = await confirmAction({
+      title: `Supprimer « ${gw.name} » ?`,
+      message:
+        "Cet agrégateur de paiement et ses clés chiffrées seront définitivement retirés de la boutique.",
+      confirmLabel: "Supprimer",
+      variant: "danger",
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/admin/gateways?id=${encodeURIComponent(gw.id)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || "Suppression impossible.", "error");
+      return;
+    }
+    showToast(`Agrégateur « ${gw.name} » supprimé.`, "success");
+    if (editingGw?.id === gw.id) setEditingGw(null);
     loadGateways();
   };
 
@@ -333,12 +503,14 @@ export function AdminClient({
       }),
     });
     if (res.ok) {
-      showToast("Configuration enregistrée et secrets chiffrés (AES-256-GCM).");
+      showToast("Configuration enregistrée et clés chiffrées en sécurité.", "success");
       setEditingGw(null);
       setApiKeyInput("");
       setWebhookSecretInput("");
       setMaketouDocIdInput("");
       loadGateways();
+    } else {
+      showToast("Erreur lors de l'enregistrement de la configuration.", "error");
     }
   };
 
@@ -371,10 +543,10 @@ export function AdminClient({
       });
       const data = await res.json();
       if (!res.ok) {
-        showToast(data.error || "Erreur lors de la création.");
+        showToast(data.error || "Erreur lors de la création.", "error");
         return;
       }
-      showToast("Nouveau produit ajouté au catalogue !");
+      showToast("Nouveau livre ajouté au catalogue !", "success");
       setNewProdOpen(false);
       setNewProdForm((prev) => ({
         ...prev,
@@ -400,21 +572,87 @@ export function AdminClient({
     const data = await res.json();
     if (res.ok && data.report) {
       setImportReport(data.report);
-      showToast(`Import terminé : ${data.report.createdCount} produits ajoutés.`);
+      showToast(
+        `Import terminé : ${data.report.createdCount} livres ajoutés.`,
+        "success"
+      );
       loadProducts();
     } else {
-      showToast(data.error || "Erreur d'importation.");
+      showToast(data.error || "Erreur d'importation.", "error");
     }
   };
 
   const handleLockSession = async () => {
+    const ok = await confirmAction({
+      title: "Verrouiller votre session ?",
+      message: "Vous serez déconnecté de l'espace administration et redirigé vers la page de connexion.",
+      confirmLabel: "Verrouiller",
+      variant: "warning",
+    });
+    if (!ok) return;
     await logout();
+    showToast("Session administrateur verrouillée.", "info");
     router.push("/connexion");
   };
 
+  const handleExportOrdersCsv = () => {
+    if (orders.length === 0) {
+      showToast("Aucune commande à exporter.", "warning");
+      return;
+    }
+    const headers = [
+      "Référence",
+      "Date",
+      "Client",
+      "Email",
+      "Téléphone",
+      "Sous-total (FCFA)",
+      "Remise (FCFA)",
+      "Total (FCFA)",
+      "Statut",
+      "Agrégateur",
+      "Ouvrages",
+    ];
+    const rows = orders.map((o) => [
+      o.reference,
+      new Date(o.createdAt).toLocaleString("fr-FR"),
+      o.customerName,
+      o.customerEmail,
+      o.customerPhone || "",
+      String(o.subtotalFcfa ?? o.totalFcfa),
+      String(o.discountFcfa ?? 0),
+      String(o.totalFcfa),
+      o.status,
+      o.gatewayCode || "",
+      (o.items || []).map((it) => it.titleSnapshot).join(" | "),
+    ]);
+    const csv = [headers, ...rows]
+      .map((line) => line.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `commandes-nexusarcanum-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(`Export CSV téléchargé (${orders.length} commandes).`, "success");
+  };
+
+  if (!authLoaded) {
+    return (
+      <div className="min-h-screen bg-[#E9EEF5] flex items-center justify-center p-4">
+        <div className="bg-white/90 backdrop-blur rounded-2xl border border-slate-200 px-6 py-4 shadow-md flex items-center gap-3 text-sm font-medium text-slate-600">
+          <span className="w-2.5 h-2.5 rounded-full bg-gold-500 animate-pulse" />
+          <span>Chargement de votre espace administration...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!user || !isAdmin) {
     return (
-      <div className="min-h-screen bg-[#F7F8FA] flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[#E9EEF5] flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 p-8 text-center space-y-5 shadow-sm">
           <div className="w-12 h-12 rounded-2xl bg-[#FEFCE8] border border-amber-200 text-amber-700 flex items-center justify-center mx-auto">
             <Lock className="w-6 h-6" />
@@ -448,10 +686,10 @@ export function AdminClient({
   }> = [
     {
       id: "cockpit",
-      vue: "VUE 01 — PILOTAGE QUOTIDIEN",
-      label: "Cockpit",
-      sub: "Vue d'ensemble",
-      title: "Cockpit de Gestion",
+      vue: "VUE 01 — FINANCES & ACTIVITÉ",
+      label: "Tableau de bord",
+      sub: "Chiffres & Revenus",
+      title: "Tableau de bord Financier",
       icon: LayoutDashboard,
     },
     {
@@ -474,7 +712,7 @@ export function AdminClient({
       id: "payments",
       vue: "VUE 04 — PAIEMENTS MULTI-AGRÉGATEURS",
       label: "Paiements",
-      sub: "Maketou, SebPay & Modes",
+      sub: "Maketou, FedaPay, KKiaPay...",
       title: "Gestion des Paiements",
       icon: CreditCard,
     },
@@ -486,12 +724,44 @@ export function AdminClient({
       title: "Importation CSV / Excel",
       icon: FileSpreadsheet,
     },
+    {
+      id: "categories",
+      vue: "VUE 06 — CATÉGORIES & PROMOTIONS",
+      label: "Catégories & Promos",
+      sub: "Univers & Coupons",
+      title: "Catégories & Codes Promo",
+      icon: FolderTree,
+    },
+    {
+      id: "cms",
+      vue: "VUE 07 — BANNIÈRES & PAGES LÉGALES",
+      label: "Bannières & Pages",
+      sub: "Accueil & Textes légaux",
+      title: "Bannières & Pages Légales",
+      icon: FileText,
+    },
+    {
+      id: "community",
+      vue: "VUE 08 — AVIS & NEWSLETTER",
+      label: "Avis & Newsletter",
+      sub: "Modération & Abonnés",
+      title: "Avis Clients & Newsletter",
+      icon: MessageSquare,
+    },
+    {
+      id: "security",
+      vue: "VUE 09 — SÉCURITÉ & JOURNAL",
+      label: "Sécurité & Journal",
+      sub: "Mot de passe & Activité",
+      title: "Sécurité & Journal d'Activité",
+      icon: ShieldAlert,
+    },
   ];
 
   const activeNav = navItems.find((n) => n.id === tab)!;
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-slate-900 flex">
+    <div className="min-h-screen bg-[#E9EEF5] text-slate-900 flex">
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -500,102 +770,104 @@ export function AdminClient({
         />
       )}
 
-      {/* Left Sidebar (style épuré inspiré Cockpit) */}
+      {/* Left Sidebar — fixe, ombre portée nette, scroll indépendant et rétractable */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between transition-transform duration-200 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        className={`fixed lg:sticky top-0 left-0 z-50 h-screen bg-white border-r border-slate-200 shadow-xl shadow-slate-900/10 flex flex-col overflow-hidden transition-all duration-200 shrink-0 ${
+          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full w-64 lg:translate-x-0"
+        } ${
+          sidebarCollapsed
+            ? "lg:w-0 lg:border-r-0 lg:shadow-none lg:opacity-0 lg:pointer-events-none"
+            : "lg:w-64 lg:opacity-100"
         }`}
       >
-        <div className="p-5 space-y-6">
-          {/* Brand header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200 flex items-center justify-center font-serif font-bold text-navy-950 text-base shadow-xs">
-                N
+        {/* Brand header (fixe en haut) */}
+        <div className="p-5 pb-4 border-b border-slate-100 flex items-center justify-between shrink-0 min-w-[16rem]">
+          <div className="flex items-center gap-3 min-w-0">
+            {branding.siteLogoUrl ? (
+              <img
+                src={branding.siteLogoUrl}
+                alt={branding.siteName}
+                className="w-9 h-9 rounded-xl object-cover border border-amber-200 shadow-xs shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200 flex items-center justify-center font-serif font-bold text-navy-950 text-base shadow-xs shrink-0">
+                {branding.siteName.charAt(0).toUpperCase()}
               </div>
-              <div className="leading-tight">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-xs tracking-wider text-slate-900 uppercase">
-                    NEXUSARCANUM
-                  </span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                </div>
-                <span className="text-[10px] text-slate-400 font-medium tracking-wide uppercase">
-                  ADMIN • LIBRAIRIE
+            )}
+            <div className="leading-tight min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-xs tracking-wider text-slate-900 uppercase truncate">
+                  {branding.siteName}
                 </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
               </div>
+              <span className="text-[10px] text-slate-400 font-medium tracking-wide uppercase block truncate">
+                ADMIN • LIBRAIRIE
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1 text-slate-400 hover:text-slate-700"
-              aria-label="Fermer le menu"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
-
-          {/* Navigation */}
-          <div className="space-y-1.5">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
-              Navigation
-            </p>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = tab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setTab(item.id);
-                    setSidebarOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition cursor-pointer relative ${
-                    isActive
-                      ? "bg-[#FEFCE8] text-slate-900 border border-amber-200/80 shadow-xs"
-                      : "text-slate-600 hover:bg-slate-50 border border-transparent"
-                  }`}
-                >
-                  {isActive && (
-                    <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-gold-500" />
-                  )}
-                  <Icon
-                    className={`w-4 h-4 shrink-0 ${
-                      isActive ? "text-amber-700" : "text-slate-400"
-                    }`}
-                  />
-                  <div className="min-w-0">
-                    <p className={`text-xs font-semibold truncate ${isActive ? "text-slate-900" : ""}`}>
-                      {item.label}
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate">{item.sub}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+            aria-label="Fermer le menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            className="hidden lg:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+            title="Fermer la barre latérale"
+            aria-label="Fermer la barre latérale"
+          >
+            <PanelLeftClose className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Bottom status & lock session */}
-        <div className="p-4 space-y-2.5 border-t border-slate-100">
-          <div className="rounded-xl bg-slate-50 border border-slate-200/70 p-3 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    stats.dbConnected ? "bg-emerald-500" : "bg-amber-500"
+        {/* Navigation (scroll indépendant) */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5 min-w-[16rem]">
+          <p className="px-3 text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+            Navigation
+          </p>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  setTab(item.id);
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition cursor-pointer relative ${
+                  isActive
+                    ? "bg-[#FEFCE8] text-slate-900 border border-amber-200/80 shadow-xs"
+                    : "text-slate-600 hover:bg-slate-50 border border-transparent"
+                }`}
+              >
+                {isActive && (
+                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-gold-500" />
+                )}
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
+                    isActive ? "text-amber-700" : "text-slate-400"
                   }`}
                 />
-                {stats.dbConnected ? "Supabase Actif" : "Supabase Dégradé"}
-              </span>
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            </div>
-            <p className="text-[10px] text-slate-400 font-medium">
-              Taux EUR/XOF <span className="text-slate-600 font-semibold">1 € ≈ 655,957</span>
-            </p>
-          </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-semibold truncate ${isActive ? "text-slate-900" : ""}`}>
+                    {item.label}
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">{item.sub}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
 
+        {/* Bottom lock session (fixe en bas) */}
+        <div className="p-4 border-t border-slate-100 bg-white shrink-0 min-w-[16rem]">
           <button
             type="button"
             onClick={handleLockSession}
@@ -610,16 +882,29 @@ export function AdminClient({
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 bg-[#F7F8FA]/90 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-8 py-4">
+        <header className="sticky top-0 z-30 bg-[#E9EEF5]/90 backdrop-blur-md border-b border-slate-200/60 px-4 sm:px-8 py-4">
           <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-700"
+                className="lg:hidden p-2 rounded-xl bg-white border border-slate-200 text-slate-700 shadow-2xs cursor-pointer"
                 aria-label="Ouvrir la navigation"
               >
                 <Menu className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((v) => !v)}
+                className="hidden lg:inline-flex items-center justify-center p-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs transition cursor-pointer"
+                title={sidebarCollapsed ? "Ouvrir le menu latéral" : "Fermer le menu latéral"}
+                aria-label={sidebarCollapsed ? "Ouvrir le menu latéral" : "Fermer le menu latéral"}
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeftOpen className="w-4 h-4" />
+                ) : (
+                  <PanelLeftClose className="w-4 h-4" />
+                )}
               </button>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
@@ -664,123 +949,75 @@ export function AdminClient({
               <>
                 {/* Bento Grid Row 1 */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Card 1: Tâches du jour */}
-                  <section className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  {/* Card 1: Chiffres Financiers */}
+                  <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200/70 flex items-center justify-center text-amber-700 shrink-0">
-                          <CheckCircle2 className="w-4 h-4" />
+                        <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200 flex items-center justify-center text-amber-700 shrink-0">
+                          <TrendingUp className="w-4 h-4" />
                         </div>
                         <div>
                           <h2 className="font-bold text-sm text-slate-900">
-                            Tâches du Jour & Priorités
+                            Chiffres Financiers & Revenus
                           </h2>
                           <p className="text-xs text-slate-400">
-                            Jusqu&apos;à 10 actions rapides pour piloter la librairie
+                            Synthèse des encaissements et transactions
                           </p>
                         </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-bold">
-                        {tasks.length} / 10
+                      <span className="px-2.5 py-1 rounded-lg bg-[#FEFCE8] border border-amber-200 text-amber-900 text-[11px] font-bold">
+                        FCFA (XOF)
                       </span>
                     </div>
 
-                    <form onSubmit={handleAddTask} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={taskText}
-                        onChange={(e) => setTaskText(e.target.value)}
-                        placeholder="Ex: Ajouter la clé API Maketou..."
-                        className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs bg-slate-50/50 focus:bg-white"
-                      />
-                      <select
-                        value={taskPriority}
-                        onChange={(e) =>
-                          setTaskPriority(e.target.value as AdminTask["priority"])
-                        }
-                        aria-label="Priorité"
-                        className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs bg-white font-medium"
-                      >
-                        <option value="Critique">Critique</option>
-                        <option value="Important">Important</option>
-                        <option value="Normal">Normal</option>
-                      </select>
-                      <button
-                        type="submit"
-                        className="px-3.5 py-2 rounded-xl bg-navy-950 text-gold-500 text-xs font-bold hover:bg-navy-900 transition cursor-pointer shrink-0"
-                      >
-                        + Ajouter
-                      </button>
-                    </form>
-
-                    {tasks.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-xs text-slate-400">
-                        Aucune tâche définie pour aujourd&apos;hui. Notez vos actions prioritaires ci-dessus.
+                    <div className="p-4 rounded-xl bg-[#FEFCE8]/70 border border-amber-200/80 flex items-baseline justify-between gap-2">
+                      <div>
+                        <p className="text-[11px] font-semibold text-amber-900/80">
+                          Chiffre d&apos;affaires encaissé
+                        </p>
+                        <p className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-0.5">
+                          {formatFcfa(stats.totalRevenueFcfa)}
+                        </p>
                       </div>
-                    ) : (
-                      <ul className="space-y-2 max-h-52 overflow-y-auto">
-                        {tasks.map((task) => (
-                          <li
-                            key={task.id}
-                            className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 text-xs"
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                persistTasks(
-                                  tasks.map((t) =>
-                                    t.id === task.id ? { ...t, done: !t.done } : t
-                                  )
-                                )
-                              }
-                              className="flex items-center gap-2 text-left flex-1 cursor-pointer"
-                            >
-                              <span
-                                className={`w-4 h-4 rounded-md border flex items-center justify-center ${
-                                  task.done
-                                    ? "bg-emerald-500 border-emerald-500 text-white"
-                                    : "border-slate-300 bg-white"
-                                }`}
-                              >
-                                {task.done && <Check className="w-3 h-3" />}
-                              </span>
-                              <span
-                                className={
-                                  task.done ? "line-through text-slate-400" : "text-slate-700 font-medium"
-                                }
-                              >
-                                {task.text}
-                              </span>
-                            </button>
-                            <span
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                task.priority === "Critique"
-                                  ? "bg-rose-50 text-rose-700"
-                                  : task.priority === "Important"
-                                  ? "bg-amber-50 text-amber-700"
-                                  : "bg-slate-200 text-slate-600"
-                              }`}
-                            >
-                              {task.priority}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                persistTasks(tasks.filter((t) => t.id !== task.id))
-                              }
-                              className="text-slate-400 hover:text-rose-600 cursor-pointer"
-                              aria-label="Supprimer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                      <span className="text-xs font-semibold text-slate-500">
+                        ≈ {Math.round(stats.totalRevenueFcfa / 655.957).toLocaleString("fr-FR")} €
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
+                        <p className="text-[10px] text-slate-500 font-medium">Commandes</p>
+                        <p className="text-lg font-extrabold text-slate-900 mt-0.5">
+                          {stats.totalOrders}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
+                        <p className="text-[10px] text-slate-500 font-medium">Panier moyen</p>
+                        <p className="text-sm font-extrabold text-slate-900 mt-1">
+                          {stats.succeededPayments > 0
+                            ? formatFcfa(
+                                Math.round(stats.totalRevenueFcfa / stats.succeededPayments)
+                              )
+                            : "0 FCFA"}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70">
+                        <p className="text-[10px] text-slate-500 font-medium">Taux succès</p>
+                        <p className="text-lg font-extrabold text-emerald-700 mt-0.5">
+                          {stats.succeededPayments + stats.failedPayments > 0
+                            ? `${Math.round(
+                                (stats.succeededPayments /
+                                  (stats.succeededPayments + stats.failedPayments)) *
+                                  100
+                              )}%`
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
                   </section>
 
                   {/* Card 2: Indicateurs clés */}
-                  <section className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200/70 flex items-center justify-center text-amber-700 shrink-0">
@@ -824,7 +1061,7 @@ export function AdminClient({
                 {/* Bento Grid Row 2 */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Alertes Paiements */}
-                  <section className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200/70 flex items-center justify-center text-amber-700 shrink-0">
@@ -875,7 +1112,7 @@ export function AdminClient({
                   </section>
 
                   {/* Commandes récentes */}
-                  <section className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-start gap-3">
                         <div className="w-9 h-9 rounded-xl bg-[#FEFCE8] border border-amber-200/70 flex items-center justify-center text-amber-700 shrink-0">
@@ -902,9 +1139,11 @@ export function AdminClient({
                     ) : (
                       <div className="space-y-2">
                         {orders.slice(0, 4).map((o) => (
-                          <div
+                          <button
                             key={o.id}
-                            className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs"
+                            type="button"
+                            onClick={() => setSelectedOrder(o)}
+                            className="w-full text-left flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-100 hover:border-amber-300 hover:bg-amber-50/40 transition text-xs cursor-pointer"
                           >
                             <div>
                               <p className="font-bold text-slate-900">{o.reference}</p>
@@ -916,7 +1155,7 @@ export function AdminClient({
                                 {o.status}
                               </span>
                             </div>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1066,8 +1305,9 @@ export function AdminClient({
                   </form>
                 )}
 
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 flex flex-col max-h-[calc(100vh-140px)]">
+                  {/* Barre de recherche & filtres fixes (ne scrolle jamais) */}
+                  <div className="shrink-0 pb-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="relative flex-1 max-w-sm">
                       <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -1107,10 +1347,11 @@ export function AdminClient({
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  {/* Tableau avec en-tête fixe et défilement indépendant */}
+                  <div className="flex-1 min-h-0 overflow-auto">
                     <table className="w-full text-xs text-left">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 uppercase text-[10px]">
+                      <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_#f1f5f9]">
+                        <tr className="text-slate-400 uppercase text-[10px]">
                           <th className="py-3 pr-4">
                             <button
                               type="button"
@@ -1216,8 +1457,8 @@ export function AdminClient({
                     </table>
                   </div>
 
-                  {/* Pagination Data Table */}
-                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                  {/* Pagination Data Table (fixe en bas) */}
+                  <div className="shrink-0 pt-3 border-t border-slate-100 bg-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
                     <div className="flex items-center gap-3">
                       <span>
                         Affichage{" "}
@@ -1293,52 +1534,117 @@ export function AdminClient({
             {/* ========================================== */}
             {tab === "orders" && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
-                  <h2 className="font-bold text-sm text-slate-900">
-                    Commandes ({orders.length})
-                  </h2>
-                  {orders.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400">
-                      Aucune commande pour le moment.
+                <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 flex flex-col max-h-[calc(100vh-140px)]">
+                  <div className="shrink-0 space-y-3 pb-3 border-b border-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="font-bold text-sm text-slate-900">
+                          Commandes ({filteredOrders.length})
+                        </h2>
+                        <p className="text-[11px] text-slate-400">
+                          Cliquez sur une commande pour afficher son reçu détaillé
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportOrdersCsv}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-navy-950 text-gold-500 font-bold text-xs hover:bg-navy-900 transition cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Exporter CSV</span>
+                      </button>
                     </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 text-xs">
-                      {orders.map((o) => (
-                        <div key={o.id} className="py-3 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="font-bold text-slate-900">{o.reference}</p>
-                            <p className="text-slate-500">
-                              {o.customerName} • {o.customerEmail}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-slate-900">{formatFcfa(o.totalFcfa)}</p>
-                            <span className="px-2 py-0.5 rounded bg-slate-100 text-[10px] font-semibold">
-                              {o.status}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="search"
+                        value={orderQuery}
+                        onChange={(e) => setOrderQuery(e.target.value)}
+                        placeholder="Rechercher par référence, client, email ou statut..."
+                        className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50/50 focus:bg-white"
+                      />
                     </div>
-                  )}
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto pt-1">
+                    {filteredOrders.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-8 mt-3 text-center text-xs text-slate-400">
+                        Aucune commande correspondante.
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100 text-xs">
+                        {filteredOrders.map((o) => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => setSelectedOrder(o)}
+                            className="w-full text-left py-3 px-2 rounded-xl hover:bg-slate-50 transition flex items-center justify-between gap-3 cursor-pointer"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-slate-900">{o.reference}</p>
+                                {o.gatewayCode && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase">
+                                    {o.gatewayCode}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-slate-500 mt-0.5">
+                                {o.customerName} • {o.customerEmail}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="font-bold text-slate-900">{formatFcfa(o.totalFcfa)}</p>
+                              <span
+                                className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  o.status === "PAID" || o.status === "COMPLETED"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : o.status === "FAILED" || o.status === "CANCELLED"
+                                    ? "bg-rose-50 text-rose-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {o.status}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
-                  <h2 className="font-bold text-sm text-slate-900">
-                    Clients inscrits ({clients.length})
-                  </h2>
-                  <div className="divide-y divide-slate-100 text-xs">
-                    {clients.map((c) => (
-                      <div key={c.id} className="py-3 flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 truncate">{c.name}</p>
-                          <p className="text-slate-500 truncate">{c.email}</p>
+                <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 flex flex-col max-h-[calc(100vh-140px)]">
+                  <div className="shrink-0 space-y-3 pb-3 border-b border-slate-100">
+                    <h2 className="font-bold text-sm text-slate-900">
+                      Clients inscrits ({filteredClients.length})
+                    </h2>
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="search"
+                        value={clientQuery}
+                        onChange={(e) => setClientQuery(e.target.value)}
+                        placeholder="Rechercher un client par nom, email ou pays..."
+                        className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50/50 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 text-xs pt-1">
+                    {filteredClients.length === 0 ? (
+                      <p className="py-8 text-center text-slate-400">Aucun client correspondant.</p>
+                    ) : (
+                      filteredClients.map((c) => (
+                        <div key={c.id} className="py-3 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 truncate">{c.name}</p>
+                            <p className="text-slate-500 truncate">{c.email}</p>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
+                            {c.country}
+                          </span>
                         </div>
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
-                          {c.country}
-                        </span>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -1349,31 +1655,36 @@ export function AdminClient({
             {/* ========================================== */}
             {tab === "payments" && (
               <div className="space-y-6">
-                <section className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
-                  <div>
-                    <h2 className="font-bold text-sm text-slate-900">
-                      Mode de routage des paiements
-                    </h2>
-                    <p className="text-xs text-slate-400">
-                      Choisissez comment NEXUSARCANUM SHOP sélectionne l&apos;agrégateur au checkout.
-                    </p>
+                <section className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold text-sm text-slate-900">
+                        Mode de routage des paiements
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Choisissez comment NEXUSARCANUM SHOP sélectionne l&apos;agrégateur au checkout.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNewGwOpen(!newGwOpen)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-navy-950 text-gold-500 font-bold text-xs hover:bg-navy-900 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Ajouter un agrégateur</span>
+                    </button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {[
                       {
                         id: "MODE_A",
-                        title: "Mode A — Unique",
-                        desc: "Tout passe par l'agrégateur défini par défaut.",
-                      },
-                      {
-                        id: "MODE_B",
-                        title: "Mode B — Choix client",
-                        desc: "Le client choisit parmi vos agrégateurs actifs.",
+                        title: "Mode A — Agrégateur principal",
+                        desc: "Tous les paiements passent automatiquement par l'agrégateur défini par défaut.",
                       },
                       {
                         id: "MODE_C",
                         title: "Mode C — Routage intelligent",
-                        desc: "Choix automatique selon pays, devise, opérateur et frais.",
+                        desc: "Choix automatique selon le pays, la devise, l'opérateur et les frais les plus bas.",
                       },
                     ].map((m) => (
                       <button
@@ -1384,8 +1695,8 @@ export function AdminClient({
                         }
                         className={`p-4 rounded-xl border text-left transition cursor-pointer ${
                           routingMode === m.id
-                            ? "border-amber-300 bg-[#FEFCE8] shadow-2xs"
-                            : "border-slate-200 hover:bg-slate-50"
+                            ? "border-amber-300 bg-[#FEFCE8] shadow-sm"
+                            : "border-slate-200 bg-slate-50/40 hover:bg-slate-50"
                         }`}
                       >
                         <p className="font-bold text-xs text-slate-900">{m.title}</p>
@@ -1395,11 +1706,155 @@ export function AdminClient({
                   </div>
                 </section>
 
+                {newGwOpen && (
+                  <form
+                    onSubmit={handleCreateGateway}
+                    className="bg-white rounded-2xl border-2 border-amber-300 p-6 shadow-md space-y-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-base text-slate-900">
+                        Ajouter un nouvel agrégateur de paiement
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setNewGwOpen(false)}
+                        className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <label className="block font-semibold text-slate-600 mb-1">Nom *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: CinetPay, FedaPay, Moneroo..."
+                          value={newGwForm.name}
+                          onChange={(e) => setNewGwForm({ ...newGwForm, name: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-600 mb-1">
+                          Identifiant technique (code) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ex: cinetpay, fedapay..."
+                          value={newGwForm.code}
+                          onChange={(e) => setNewGwForm({ ...newGwForm, code: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-600 mb-1">URL API</label>
+                        <input
+                          type="text"
+                          placeholder="https://api.prestataire.com/v1"
+                          value={newGwForm.apiBaseUrl}
+                          onChange={(e) =>
+                            setNewGwForm({ ...newGwForm, apiBaseUrl: e.target.value })
+                          }
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block font-semibold text-slate-600 mb-1">
+                            Frais (%)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={newGwForm.feePercent}
+                            onChange={(e) =>
+                              setNewGwForm({ ...newGwForm, feePercent: e.target.value })
+                            }
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-600 mb-1">Mode</label>
+                          <select
+                            value={newGwForm.environment}
+                            onChange={(e) =>
+                              setNewGwForm({
+                                ...newGwForm,
+                                environment: e.target.value as "TEST" | "PRODUCTION",
+                              })
+                            }
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
+                          >
+                            <option value="TEST">TEST</option>
+                            <option value="PRODUCTION">PRODUCTION</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-600 mb-1">
+                          Clé API (chiffrée AES-256-GCM)
+                        </label>
+                        <input
+                          type="password"
+                          value={newGwForm.apiKey}
+                          onChange={(e) => setNewGwForm({ ...newGwForm, apiKey: e.target.value })}
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-600 mb-1">
+                          Secret Webhook
+                        </label>
+                        <input
+                          type="password"
+                          value={newGwForm.webhookSecret}
+                          onChange={(e) =>
+                            setNewGwForm({ ...newGwForm, webhookSecret: e.target.value })
+                          }
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block font-semibold text-slate-600 mb-1">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={newGwForm.description}
+                          onChange={(e) =>
+                            setNewGwForm({ ...newGwForm, description: e.target.value })
+                          }
+                          placeholder="Mobile Money Bénin / Côte d'Ivoire / Cartes..."
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewGwOpen(false)}
+                        className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold cursor-pointer"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={newGwSaving}
+                        className="px-5 py-2 rounded-xl bg-navy-950 text-gold-500 text-xs font-bold cursor-pointer"
+                      >
+                        {newGwSaving ? "Ajout..." : "Enregistrer l'agrégateur"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {gateways.map((gw) => (
                     <div
                       key={gw.id}
-                      className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4"
+                      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-md shadow-slate-900/5 space-y-4"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -1416,15 +1871,15 @@ export function AdminClient({
                         <span
                           className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
                             gw.isActive
-                              ? "bg-emerald-50 text-emerald-700"
-                              : "bg-slate-100 text-slate-500"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-slate-100 text-slate-500 border border-slate-200"
                           }`}
                         >
                           {gw.isActive ? "Actif" : "Inactif"}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50/80 p-3 rounded-xl border border-slate-100">
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/70">
                         <div>
                           Mode : <strong className="text-slate-900">{gw.environment}</strong>
                         </div>
@@ -1447,7 +1902,7 @@ export function AdminClient({
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => {
@@ -1458,21 +1913,42 @@ export function AdminClient({
                         >
                           Configurer
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleGatewayAction(gw.id, "TOGGLE_ACTIVE")}
+                          className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer ${
+                            gw.isActive
+                              ? "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                          }`}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                          <span>{gw.isActive ? "Désactiver" : "Activer"}</span>
+                        </button>
                         {!gw.isDefault && (
                           <button
                             type="button"
                             onClick={() => handleGatewayAction(gw.id, "SET_DEFAULT")}
-                            className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                            className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                           >
-                            Définir par défaut
+                            Par défaut
                           </button>
                         )}
                         <button
                           type="button"
                           onClick={() => handleGatewayAction(gw.id, "TEST_CONNECTION")}
-                          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                         >
                           Tester
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGateway(gw)}
+                          title="Supprimer cet agrégateur"
+                          aria-label="Supprimer"
+                          className="ml-auto p-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -1502,12 +1978,12 @@ export function AdminClient({
                             setEditingGw({ ...editingGw, isActive: e.target.checked })
                           }
                         />
-                        Activer cet agrégateur
+                        Activer {editingGw.name} sur la boutique
                       </label>
 
                       <div>
                         <label className="block font-semibold text-slate-600 mb-1">
-                          Environnement
+                          Mode d&apos;utilisation
                         </label>
                         <select
                           value={editingGw.environment}
@@ -1519,58 +1995,33 @@ export function AdminClient({
                           }
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white"
                         >
-                          <option value="TEST">TEST (Sandbox)</option>
-                          <option value="PRODUCTION">PRODUCTION</option>
+                          <option value="TEST">Mode Test (pour essayer sans argent réel)</option>
+                          <option value="PRODUCTION">Mode Réel (encaissements clients)</option>
                         </select>
                       </div>
 
                       <div>
-                        <label className="block font-semibold text-slate-600 mb-1">URL API</label>
-                        <input
-                          type="text"
-                          value={editingGw.apiBaseUrl || ""}
-                          onChange={(e) =>
-                            setEditingGw({ ...editingGw, apiBaseUrl: e.target.value })
-                          }
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        />
-                      </div>
-
-                      <div>
                         <label className="block font-semibold text-slate-600 mb-1">
-                          Frais (%)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          value={editingGw.feePercent}
-                          onChange={(e) =>
-                            setEditingGw({ ...editingGw, feePercent: Number(e.target.value) })
-                          }
-                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-slate-600 mb-1">
-                          Clé API (laisser vide pour conserver l&apos;actuelle)
+                          Clé API {editingGw.name} (chiffrée automatiquement)
                         </label>
                         <input
                           type="password"
                           value={apiKeyInput}
                           onChange={(e) => setApiKeyInput(e.target.value)}
+                          placeholder="Collez votre clé ici (laisser vide pour garder l'actuelle)"
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                         />
                       </div>
 
                       <div>
                         <label className="block font-semibold text-slate-600 mb-1">
-                          Secret Webhook
+                          Clé secrète Webhook (optionnel)
                         </label>
                         <input
                           type="password"
                           value={webhookSecretInput}
                           onChange={(e) => setWebhookSecretInput(e.target.value)}
+                          placeholder="Optionnel — fourni par votre prestataire"
                           className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                         />
                       </div>
@@ -1578,16 +2029,52 @@ export function AdminClient({
                       {editingGw.code === "maketou" && (
                         <div className="sm:col-span-2">
                           <label className="block font-semibold text-slate-600 mb-1">
-                            Maketou productDocumentId (passerelle customerPrice)
+                            Identifiant Produit Maketou (productDocumentId)
                           </label>
                           <input
                             type="text"
                             value={maketouDocIdInput}
                             onChange={(e) => setMaketouDocIdInput(e.target.value)}
+                            placeholder="Visible dans votre boutique Maketou"
                             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                           />
                         </div>
                       )}
+
+                      <details className="sm:col-span-2 rounded-xl bg-slate-50 border border-slate-200/70 p-3">
+                        <summary className="font-semibold text-slate-600 cursor-pointer">
+                          Options techniques avancées (pré-remplies automatiquement)
+                        </summary>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                          <div>
+                            <label className="block font-semibold text-slate-600 mb-1">
+                              URL API
+                            </label>
+                            <input
+                              type="text"
+                              value={editingGw.apiBaseUrl || ""}
+                              onChange={(e) =>
+                                setEditingGw({ ...editingGw, apiBaseUrl: e.target.value })
+                              }
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-semibold text-slate-600 mb-1">
+                              Frais (%)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={editingGw.feePercent}
+                              onChange={(e) =>
+                                setEditingGw({ ...editingGw, feePercent: Number(e.target.value) })
+                              }
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </details>
                     </div>
 
                     <div className="flex gap-2 pt-2">
@@ -1614,7 +2101,7 @@ export function AdminClient({
             {/* VUE 05 : IMPORT MASSIF                     */}
             {/* ========================================== */}
             {tab === "import" && (
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-2xs space-y-5">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-md shadow-slate-900/5 space-y-5">
                 <div>
                   <h2 className="font-bold text-base text-slate-900">
                     Importer des centaines ou milliers de livres (CSV / Excel)
@@ -1667,9 +2154,135 @@ export function AdminClient({
                 )}
               </div>
             )}
+
+            {/* VUE 06 : CATÉGORIES & COUPONS */}
+            {tab === "categories" && <CategoriesCouponsPanel />}
+
+            {/* VUE 07 : BANNIÈRES & PAGES LÉGALES */}
+            {tab === "cms" && <CmsBannersPanel />}
+
+            {/* VUE 08 : AVIS CLIENTS & NEWSLETTER */}
+            {tab === "community" && <CommunityPanel />}
+
+            {/* VUE 09 : SÉCURITÉ & JOURNAL */}
+            {tab === "security" && <SecurityAuditPanel />}
           </div>
         </div>
       </div>
+
+      {/* Modale Glassmorphism — Détail d'une commande */}
+      {selectedOrder && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-navy-950/50 backdrop-blur-md"
+          onClick={() => setSelectedOrder(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-3xl bg-white/90 backdrop-blur-xl border border-white/60 shadow-2xl p-6 space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#FEFCE8] border border-amber-200 flex items-center justify-center text-amber-700">
+                  <Receipt className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    Reçu de commande
+                  </p>
+                  <h3 className="font-serif text-lg font-bold text-navy-950">
+                    {selectedOrder.reference}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedOrder(null)}
+                className="p-2 rounded-xl bg-white/80 border border-slate-200 text-slate-500 hover:text-slate-900 cursor-pointer"
+                aria-label="Fermer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50/90 border border-slate-200/70 rounded-2xl p-4">
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Client</p>
+                <p className="font-bold text-slate-900 mt-0.5">{selectedOrder.customerName}</p>
+                <p className="text-slate-500 break-all">{selectedOrder.customerEmail}</p>
+                {selectedOrder.customerPhone && (
+                  <p className="text-slate-500 mt-0.5">{selectedOrder.customerPhone}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase">Paiement</p>
+                <p className="font-bold text-slate-900 mt-0.5 uppercase">
+                  {selectedOrder.gatewayCode || "Non renseigné"}
+                </p>
+                <p className="text-slate-500 mt-0.5">
+                  Statut : <strong>{selectedOrder.status}</strong>
+                </p>
+                <p className="text-slate-400 mt-0.5">
+                  {new Date(selectedOrder.createdAt).toLocaleString("fr-FR")}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Ouvrages inclus ({selectedOrder.items?.length || 0})
+              </p>
+              {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200/80 bg-white/80 px-4">
+                  {selectedOrder.items.map((it) => (
+                    <div
+                      key={it.id}
+                      className="py-2.5 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="font-medium text-slate-800">{it.titleSnapshot}</span>
+                      <span className="font-bold text-slate-900 shrink-0">
+                        {formatFcfa(it.unitPriceFcfa)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">
+                  Aucun détail d&apos;article enregistré pour cette commande.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-2xl bg-[#FEFCE8]/80 border border-amber-200 p-4 space-y-1.5 text-xs">
+              {selectedOrder.subtotalFcfa !== undefined && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Sous-total</span>
+                  <span>{formatFcfa(selectedOrder.subtotalFcfa)}</span>
+                </div>
+              )}
+              {selectedOrder.discountFcfa ? (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Remise code promo</span>
+                  <span>- {formatFcfa(selectedOrder.discountFcfa)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between items-center pt-1.5 border-t border-amber-200/80 text-sm font-extrabold text-navy-950">
+                <span>Total payé</span>
+                <span>{formatFcfa(selectedOrder.totalFcfa)}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedOrder(null)}
+                className="px-5 py-2.5 rounded-xl bg-navy-950 text-gold-500 font-bold text-xs hover:bg-navy-900 transition cursor-pointer"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

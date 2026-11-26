@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { getCurrentSession, isAdminSession } from "@/lib/security/auth";
+import { autoTranslateFrToEn } from "@/lib/services/translate";
 
 export async function GET(
   _req: Request,
@@ -98,13 +99,13 @@ export async function GET(
 
 const FullUpdateSchema = z.object({
   titleFr: z.string().min(2),
-  titleEn: z.string().min(2),
+  titleEn: z.string().optional(),
   subtitleFr: z.string().optional(),
   subtitleEn: z.string().optional(),
   shortDescFr: z.string().min(2),
-  shortDescEn: z.string().min(2),
+  shortDescEn: z.string().optional(),
   longDescFr: z.string().min(2),
-  longDescEn: z.string().min(2),
+  longDescEn: z.string().optional(),
   summaryFr: z.string().optional(),
   summaryEn: z.string().optional(),
   primaryFormat: z.string().min(1),
@@ -156,19 +157,28 @@ export async function PATCH(
     const supabase = requireSupabaseAdmin();
     const now = new Date().toISOString();
 
+    // Traduction automatique FR -> EN (l'admin n'a jamais à traduire manuellement)
+    const [titleEn, subtitleEn, shortDescEn, longDescEn, summaryEn] = await Promise.all([
+      autoTranslateFrToEn(d.titleFr),
+      d.subtitleFr ? autoTranslateFrToEn(d.subtitleFr) : Promise.resolve(""),
+      autoTranslateFrToEn(d.shortDescFr),
+      autoTranslateFrToEn(d.longDescFr),
+      d.summaryFr ? autoTranslateFrToEn(d.summaryFr) : Promise.resolve(""),
+    ]);
+
     const { error } = await supabase
       .from("products")
       .update({
         title_fr: d.titleFr.trim(),
-        title_en: d.titleEn.trim(),
+        title_en: titleEn || d.titleFr.trim(),
         subtitle_fr: d.subtitleFr?.trim() || null,
-        subtitle_en: d.subtitleEn?.trim() || null,
+        subtitle_en: subtitleEn || null,
         short_desc_fr: d.shortDescFr.trim(),
-        short_desc_en: d.shortDescEn.trim(),
+        short_desc_en: shortDescEn || d.shortDescFr.trim(),
         long_desc_fr: d.longDescFr.trim(),
-        long_desc_en: d.longDescEn.trim(),
+        long_desc_en: longDescEn || d.longDescFr.trim(),
         summary_fr: d.summaryFr?.trim() || "",
-        summary_en: d.summaryEn?.trim() || "",
+        summary_en: summaryEn || "",
         primary_format: d.primaryFormat.toUpperCase(),
         product_type: d.productType,
         page_count: d.pageCount ?? null,

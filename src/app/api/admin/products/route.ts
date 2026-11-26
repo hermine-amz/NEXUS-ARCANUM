@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireSupabaseAdmin, newId } from "@/lib/supabase";
 import { getCurrentSession, isAdminSession } from "@/lib/security/auth";
+import { autoTranslateFrToEn } from "@/lib/services/translate";
 
 const AdminProductPatchSchema = z.object({
   productId: z.string().min(1),
@@ -129,17 +130,23 @@ export async function POST(req: Request) {
     }
 
     const productId = newId();
+    const [titleEn, subtitleEn, shortDescEn] = await Promise.all([
+      autoTranslateFrToEn(d.titleFr),
+      d.subtitleFr ? autoTranslateFrToEn(d.subtitleFr) : Promise.resolve(""),
+      autoTranslateFrToEn(d.shortDescFr),
+    ]);
+
     const { error } = await supabase.from("products").insert({
       id: productId,
       slug,
       title_fr: d.titleFr.trim(),
-      title_en: d.titleFr.trim(),
+      title_en: titleEn || d.titleFr.trim(),
       subtitle_fr: d.subtitleFr?.trim() || null,
-      subtitle_en: d.subtitleFr?.trim() || null,
+      subtitle_en: subtitleEn || null,
       short_desc_fr: d.shortDescFr.trim(),
-      short_desc_en: d.shortDescFr.trim(),
+      short_desc_en: shortDescEn || d.shortDescFr.trim(),
       long_desc_fr: d.shortDescFr.trim(),
-      long_desc_en: d.shortDescFr.trim(),
+      long_desc_en: shortDescEn || d.shortDescFr.trim(),
       summary_fr: "Sommaire à compléter.",
       summary_en: "Table of contents.",
       product_type: d.primaryFormat === "EPUB" ? "EBOOK_EPUB" : "EBOOK_PDF",

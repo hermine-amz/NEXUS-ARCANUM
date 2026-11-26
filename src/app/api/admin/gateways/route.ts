@@ -6,7 +6,13 @@ import { encryptSecrets, decryptSecrets } from "@/lib/security/crypto";
 import { getConnector, getRoutingMode } from "@/lib/services/payment/gateway-manager";
 
 const UpdateGatewaySchema = z.object({
-  action: z.enum(["UPDATE_CONFIG", "SET_DEFAULT", "TEST_CONNECTION", "SET_ROUTING_MODE"]),
+  action: z.enum([
+    "UPDATE_CONFIG",
+    "SET_DEFAULT",
+    "TEST_CONNECTION",
+    "SET_ROUTING_MODE",
+    "TOGGLE_ACTIVE",
+  ]),
   gatewayId: z.string().optional(),
   routingMode: z.enum(["MODE_A", "MODE_B", "MODE_C"]).optional(),
   isActive: z.boolean().optional(),
@@ -119,6 +125,28 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Agrégateur introuvable." }, { status: 404 });
     }
 
+    if (data.action === "TOGGLE_ACTIVE") {
+      const nextActive = !gw.is_active;
+      await supabase
+        .from("payment_gateways")
+        .update({
+          is_active: nextActive,
+          is_default: nextActive ? gw.is_default : false,
+          updated_at: now,
+        })
+        .eq("id", gw.id);
+      await supabase.from("audit_logs").insert({
+        id: newId(),
+        user_id: session!.userId,
+        action: nextActive ? "GATEWAY_ACTIVATED" : "GATEWAY_DEACTIVATED",
+        entity_type: "PaymentGateway",
+        entity_id: gw.id,
+        details: { code: gw.code },
+        created_at: now,
+      });
+      return NextResponse.json({ ok: true, isActive: nextActive });
+    }
+
     if (data.action === "SET_DEFAULT") {
       await supabase.from("payment_gateways").update({ is_default: false, updated_at: now }).neq("id", gw.id);
       await supabase
@@ -216,4 +244,129 @@ export async function PATCH(req: Request) {
       { status: 500 }
     );
   }
+}
+
+const CreateGatewaySchema = z.object({
+  name: z.string().min(2, "Nom requis"),
+  code: z.string().min(2, "Code requis").max(32),
+  description: z.string().optional(),
+  apiBaseUrl: z.string().optional(),
+  feePercent: z.coerce.number().min(0).max(50).default(2.5),
+  environment: z.enum(["TEST", "PRODUCTION"]).default("TEST"),
+  apiKey: z.string().optional(),
+  webhookSecret: z.string().optional(),
+});
+
+export async function POST(req: Request) {
+  const session = await getCurrentSession();
+  if (!isAdminSession(session)) {
+    return NextResponse.json({ error: "Accès administrateur requis." }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const parsed = CreateGatewaySchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues[0]?.message || "Paramètres invalides." },
+        { status: 400 }
+      );
+    }
+
+    const supabase = requireSupabaseAdmin();
+    const d = parsed.data;
+    const cleanCode = d.code
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9_-]+/g, "");
+    const now = new Date().toISOString();
+    const id = newId();
+
+    const { error } = await supabase.from("payment_gateways").insert({
+      id,
+      code: cleanCode,
+      name: d.name.trim(),
+      description: d.description?.trim() || "Agrégateur de paiement personnalisé",
+      is_active: false,
+      is_default: false,
+      environment: d.environment,
+      api_base_url: d.apiBaseUrl?.trim() || "",
+      webhook_url: `/api/payments/webhooks/${cleanCode}`,
+      supported_currencies: ["XOF"],
+      supported_countries: ["BJ", "CI", "SN", "TG", "BF", "ML"],
+      supported_operators: ["MTN", "MOOV", "CARD"],
+      fee_percent: d.feePercent,
+      fee_fixed_fcfa: 0,
+      priority: 10,
+      encrypted_secrets: encryptSecrets({
+        apiKey: d.apiKey || "",
+        webhookSecret: d.webhookSecret || "",
+      }),
+      created_at: now,
+      updated_at: now,
+    });
+
+    if (error) {
+      return NextResponse.json(
+        { error: "Ce code agrégateur existe déjà ou est invalide." },
+        { status: 400 }
+      );
+    }
+
+    await supabase.from("audit_logs").insert({
+      id: newId(),
+      user_id: session!.userId,
+      action: "GATEWAY_CREATED",
+      entity_type: "PaymentGateway",
+      entity_id: id,
+      details: { code: cleanCode, name: d.name },
+      created_at: now,
+    });
+
+    return NextResponse.json({ ok: true, id });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  const session = await getCurrentSession();
+  if (!isAdminSession(session)) {
+    return NextResponse.json({ error: "Accès administrateur requis." }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id requis." }, { status: 400 });
+
+  const supabase = requireSupabaseAdmin();
+  const { count } = await supabase
+    .from("payments")
+    .select("id", { count: "exact", head: true })
+    .eq("gateway_id", id);
+
+  if (count && count > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Cet agrégateur possède un historique financier. Désactivez-le plutôt que de le supprimer afin de conserver les preuves de transactions.",
+      },
+      { status: 400 }
+    );
+  }
+
+  const { error } = await supabase.from("payment_gateways").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await supabase.from("audit_logs").insert({
+    id: newId(),
+    user_id: session!.userId,
+    action: "GATEWAY_DELETED",
+    entity_type: "PaymentGateway",
+    entity_id: id,
+    created_at: new Date().toISOString(),
+  });
+
+  return NextResponse.json({ ok: true });
 }
