@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BookOpen, Heart, KeyRound, LogOut, Receipt, User as UserIcon } from "lucide-react";
 import { useApp } from "@/components/providers/AppProvider";
 import { formatFcfa } from "@/components/catalog/ProductCard";
@@ -29,6 +30,9 @@ interface FavoriteRow {
 
 export default function ComptePage() {
   const { user, logout, showToast } = useApp();
+  const router = useRouter();
+  const isAdmin =
+    user?.roles?.some((r) => r === "SUPER_ADMIN" || r === "ADMIN" || r === "EDITOR") ?? false;
   const [tab, setTab] = useState<"orders" | "favorites" | "security">("orders");
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [favorites, setFavorites] = useState<FavoriteRow[]>([]);
@@ -39,6 +43,10 @@ export default function ComptePage() {
   const [pwdSaving, setPwdSaving] = useState(false);
 
   useEffect(() => {
+    if (isAdmin) {
+      router.replace("/admin");
+      return;
+    }
     if (!user) {
       setLoading(false);
       return;
@@ -52,7 +60,7 @@ export default function ComptePage() {
         setFavorites(fData.favorites || []);
       })
       .finally(() => setLoading(false));
-  }, [user]);
+  }, [user, isAdmin, router]);
 
   const handleRemoveFavorite = async (productId: string) => {
     const res = await fetch("/api/favorites", {

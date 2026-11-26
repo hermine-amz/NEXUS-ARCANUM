@@ -119,25 +119,25 @@ export function Header() {
               <span className="hidden xl:inline">{t.nav.library}</span>
             </Link>
 
-            {isAdmin && (
+            {isAdmin ? (
               <Link
                 href="/admin"
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-gold-500/15 text-gold-500 border border-gold-500/30 hover:bg-gold-500/25 transition"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-gold-500/15 text-gold-500 border border-gold-500/30 hover:bg-gold-500/25 transition"
               >
                 <Shield className="w-4 h-4" />
-                <span className="hidden xl:inline">{t.nav.admin}</span>
+                <span className="hidden lg:inline">{t.nav.admin}</span>
+              </Link>
+            ) : (
+              <Link
+                href={user ? "/compte" : "/connexion"}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-white/10 transition"
+              >
+                <User className="w-4 h-4 text-gold-500" />
+                <span className="hidden lg:inline">
+                  {user ? user.firstName : t.nav.account}
+                </span>
               </Link>
             )}
-
-            <Link
-              href={user ? "/compte" : "/connexion"}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium hover:bg-white/10 transition"
-            >
-              <User className="w-4 h-4 text-gold-500" />
-              <span className="hidden lg:inline">
-                {user ? user.firstName : t.nav.account}
-              </span>
-            </Link>
 
             <Link
               href="/panier"
