@@ -28,6 +28,11 @@ export async function POST(req: Request) {
       const path = `branding/logo-${Date.now()}.${safeExt}`;
       const arrayBuffer = await file.arrayBuffer();
 
+      // S'assurer que le bucket public-media existe
+      await supabase.storage
+        .createBucket("public-media", { public: true })
+        .catch(() => {});
+
       const { error: upErr } = await supabase.storage
         .from("public-media")
         .upload(path, Buffer.from(arrayBuffer), {
